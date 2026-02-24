@@ -1,0 +1,17 @@
+# LS-DYNA 배터리 시뮬레이션 자동화 — Python 의존성
+# pip install -r requirements.txt
+
+# 필수
+numpy>=1.21.0
+PyYAML>=6.0
+
+# 후처리/시각화 (선택)
+matplotlib>=3.5.0
+
+# DOE 프레임워크 (선택)
+scipy>=1.7.0
+
+# 문서 변환 (선택)
+pypandoc-binary>=1.11
+python-docx>=0.8.11
+lxml>=4.9.0

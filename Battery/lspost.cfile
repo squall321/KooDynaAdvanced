@@ -1,0 +1,4 @@
+$# LS-PrePost command file created by LS-PrePost(R) 2025 R1 (v4.12.6) - 14May2025 -64bit-Window
+$# Created on Feb-22-2026 (01:18:26)
+open keyword "D:\KooDynaAdvanced\Battery\01_main_phase3_wound_tier0_5.k"
+-M S10

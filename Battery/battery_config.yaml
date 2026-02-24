@@ -1,0 +1,890 @@
+# ==============================================================================
+# LS-DYNA R16 리튬이온 배터리 시뮬레이션 설정 파일
+# ==============================================================================
+# 이 파일은 모든 배터리 k-file 생성에 필요한 물성, 치수, 파라미터를 정의합니다.
+# 각 항목의 변경 이유와 출처를 함께 기록하여 추적성을 확보합니다.
+#
+# 생성일: 2026-02-17
+# 단위계: mm, ton(10³ kg), s, N, MPa, mJ
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 메타데이터
+# ------------------------------------------------------------------------------
+metadata:
+  project_name: "LS-DYNA R16 Battery Impact Simulation"
+  version: "1.0.0"
+  last_modified: "2026-02-17"
+  author: "Battery Simulation Team"
+  description: |
+    리튬이온 파우치 배터리 측면 충격 → 내부 단락 → 열폭주 시뮬레이션
+    적층형(Stacked) 및 와인딩형(Flat Wound) 모델 지원
+
+# ------------------------------------------------------------------------------
+# 단위계 정의
+# ------------------------------------------------------------------------------
+units:
+  length: "mm"
+  mass: "ton (10³ kg = 1 tonne)"
+  time: "s"
+  force: "N"
+  stress: "MPa"
+  energy: "mJ"
+  temperature: "K"
+  current: "A"
+  voltage: "V"
+  capacitance: "F"
+  resistance: "mΩ (milliohm)"
+  thermal_conductivity: "W/mm·K"
+  specific_heat: "mJ/ton·K"
+  description: |
+    LS-DYNA consistent units: kg-mm-s-N-MPa 기준
+    1 ton = 1000 kg, 1 mJ = 1e-3 J
+
+# ------------------------------------------------------------------------------
+# 기하학적 치수 (Geometry)
+# ------------------------------------------------------------------------------
+geometry:
+  stacked:  # 적층형 배터리
+    description: "XY 평면 적층, Z = 두께 방향"
+    
+    cell_dimensions:
+      width: 70.0        # X 방향 (mm)
+      height: 140.0      # Y 방향 (mm)
+      description: "전체 셀 외형 치수 (파우치 제외)"
+      source: "스마트폰 배터리 표준 치수"
+      
+    layer_thickness:  # 각 층 두께 (mm)
+      al_current_collector:
+        value: 0.012     # 12 µm
+        description: "알루미늄 양극 집전체"
+        source: "일반 LIB 산업 표준"
+        
+      cathode_coating:
+        value: 0.065     # 65 µm (편면)
+        description: "NMC 양극 코팅층 (집전체 양면 각각)"
+        source: "고용량 배터리 양극 두께 (50-80 µm 범위)"
+        
+      separator:
+        value: 0.020     # 20 µm
+        description: "PE 세라믹 코팅 분리막"
+        source: "Celgard 2325 기준"
+        
+      anode_coating:
+        value: 0.070     # 70 µm (편면)
+        description: "흑연(Graphite) 음극 코팅층"
+        source: "고용량 배터리 음극 두께 (60-90 µm 범위)"
+        
+      cu_current_collector:
+        value: 0.008     # 8 µm
+        description: "구리 음극 집전체"
+        source: "일반 LIB 산업 표준"
+        
+      pouch:
+        value: 0.153     # 153 µm
+        description: "Al/PE 라미네이트 파우치 필름"
+        source: "DNP/Showa Denko 표준 3-layer 파우치"
+        
+      electrolyte_buffer:
+        value: 0.2       # 0.2 mm
+        description: "파우치 내면과 적층 사이 전해질 공간"
+        source: "시뮬레이션 안정성 확보용 (실제 50-100 µm)"
+        
+    unit_cell:
+      description: "Al CC + 양극×2 + 분리막 + 음극×2 + Cu CC 한 세트"
+      calculated_thickness: 0.25  # 자동 계산: 0.012 + 0.065×2 + 0.020 + 0.070×2 + 0.008 = 0.25 mm
+      
+    stacking:
+      default_n_cells: 15
+      tier_definitions:
+        # --------------------------------------------------------------------
+        # Tier -1: 디버깅/교육용 (Ultra-Coarse)
+        # --------------------------------------------------------------------
+        tier_minus1: 
+          n_cells: 5
+          mesh_size_xy: 5.0  # mm
+          through_thickness_elements: 1
+          purpose: "문법 검증, 접촉 디버깅, 솔버 실행 확인"
+          typical_elements_stacked: 6000
+          typical_elements_wound: 23000
+          timestep_us: 9.0
+          runtime_phase1: "초 단위 (워크스테이션)"
+          runtime_phase3: "분 단위 (워크스테이션)"
+          hardware: "워크스테이션 (1-4 코어)"
+          memory: "<1 GB"
+          use_case: "k-file 문법 검증, 접촉/경계조건 디버깅, 에너지 균형 확인"
+          
+        # --------------------------------------------------------------------
+        # Tier 0: 개발/검증용 (Baseline)
+        # --------------------------------------------------------------------
+        tier_0:
+          n_cells: 15
+          mesh_size_xy: 2.5  # mm
+          through_thickness_elements: 1
+          purpose: "거시적 기계 응답 (하중-변위 커브), 분리막 파괴 여부 판정"
+          typical_elements_stacked: 57000
+          typical_elements_wound: 210000
+          timestep_us: 4.0
+          runtime_phase1: "분 단위 (워크스테이션)"
+          runtime_phase3: "시간 단위 (워크스테이션)"
+          hardware: "워크스테이션 (4-8 코어)"
+          memory: "1-2 GB"
+          use_case: "개발 단계 파라미터 스터디, 거시적 응답 검증, 빠른 DOE"
+          limitations: "층별 응력 구배 해상도 부족, 분리막 파단 개시점 불정확, ISC 위치 예측 저정밀"
+          
+        # --------------------------------------------------------------------
+        # Tier 0.5: 프로덕션/규격 시험용 (Production)
+        # --------------------------------------------------------------------
+        tier_0_5:
+          n_cells: 20
+          mesh_size_xy: 0.5  # mm
+          through_thickness_elements: 1
+          purpose: "현행 업계 표준 해석, 규격 시험 (EUCAR, UL 2580) 시뮬레이션"
+          typical_elements_stacked: 1800000
+          typical_elements_wound: 4000000
+          timestep_us: 1.0
+          runtime_phase1: "시간 단위 (소규모 클러스터)"
+          runtime_phase3: "일 단위 (소규모 클러스터)"
+          hardware: "소규모 클러스터 (128-256 코어)"
+          memory: "10-20 GB"
+          use_case: "최종 설계 검증, OEM 제출용 보고서, 안전 규격 충족 증명"
+          industry_standard: "대부분의 OEM/배터리 제조사가 이 수준에서 해석 수행"
+          
+        # --------------------------------------------------------------------
+        # Tier 1: 층별 해상도 (Layer-Resolved)
+        # --------------------------------------------------------------------
+        tier_1:
+          n_cells: 22
+          mesh_size_xy: 0.1  # mm
+          through_thickness_elements: 3  # 코팅층
+          purpose: "두께 방향 응력 구배 포착, 개별 층 좌굴/변형 모드"
+          typical_elements_stacked: 200000000  # 2억
+          typical_elements_wound: 500000000    # 5억
+          timestep_us: 0.3
+          runtime_phase1: "일 단위 (대규모 HPC)"
+          runtime_phase3: "주 단위 (대규모 HPC)"
+          hardware: "대규모 HPC 클러스터 (수천~만 코어)"
+          memory: "수백 GB ~ 1 TB"
+          use_case: "연구 논문급 결과, 전극 코팅 through-thickness 응력/변형 구배 포착"
+          breakthrough: "개별 CC/분리막 층의 좌굴(wrinkling) 모사, ISC 개시점 정밀 예측, 열 핫스팟 고정밀 식별"
+          
+        # --------------------------------------------------------------------
+        # Tier 2: 입자 클러스터 스케일 (Particle-Cluster)
+        # --------------------------------------------------------------------
+        tier_2:
+          n_cells: 25
+          mesh_size_xy: 0.05  # mm (50 µm, 활물질 2차 입자 스케일)
+          through_thickness_elements: 5  # 코팅층
+          purpose: "2차 입자 (30-50µm) 수준 거동 포착, CC 파단 메커니즘"
+          typical_elements_stacked: 2000000000   # 20억
+          typical_elements_wound: 5000000000     # 50억
+          timestep_us: 0.1
+          runtime_phase1: "주 단위 (최대 규모 HPC)"
+          runtime_phase3: "월 단위 (최대 규모 HPC)"
+          hardware: "최대 규모 HPC 클러스터 (수만 코어)"
+          memory: "수 TB"
+          use_case: "첨단 연구, 활물질 입자 클러스터 수준 해상도"
+          breakthrough: "CC 파단 개시/전파 메커니즘 직접 모사, 분리막 기공 폐쇄 패턴 간접 포착, ISC 전류 경로 고해상도 맵핑"
+          
+      description: "티어별 단위셀 수, 메시 밀도, 컴퓨팅 자원, 사용 목적 정의"
+      note: |
+        티어 선택 가이드:
+        - 디버깅/교육: Tier -1
+        - 개발/파라미터 스터디: Tier 0
+        - 최종 설계 검증/규격 시험: Tier 0.5 (업계 표준)
+        - 연구 논문/고급 분석: Tier 1+
+        
+        타임스텝 제약: 면내 요소 크기가 작을수록 타임스텝 감소 → 실행 시간 증가
+        메모리 요구량: 요소 수에 비례 (sol+glstat+d3plot 포함)
+      
+    tabs:
+      positive:  # 양극(Al) 탭
+        width: 10.0       # X 방향 폭 (mm)
+        height: 8.0       # Y 방향 돌출 (mm)
+        x_center: 17.5    # X 중심 위치 (mm)
+        description: "양극 탭 (상단 좌측)"
+        
+      negative:  # 음극(Cu) 탭
+        width: 10.0
+        height: 8.0
+        x_center: 52.5    # X 중심 위치 (mm)
+        description: "음극 탭 (상단 우측)"
+        
+    pcm:  # 보호회로모듈
+      width: 20.0         # X 방향 (mm)
+      height: 3.0         # Y 방향 돌출 (mm)
+      thickness: 1.0      # Z 방향 (mm)
+      description: "PCM 보드 (FR4 기판, 탭에 부착)"
+      
+    fillet:
+      radius: 2.0         # 필렛 반경 (mm)
+      n_segments: 3       # 호 분할 수
+      description: "파우치 모서리 필렛 (메시 품질 개선)"
+
+  wound:  # 와인딩형 배터리
+    description: "레이스트랙(stadium) 단면, 아르키메데스 나선"
+    
+    cell_dimensions:
+      width: 60.0         # X 방향 (직선부 + 반원부 양쪽, mm)
+      height: 100.0       # Y 방향 (mm)
+      description: "전체 셀 외형 치수"
+      
+    layer_thickness:  # Stacked와 동일
+      al_current_collector: 0.012
+      cathode_coating: 0.065
+      separator: 0.020
+      anode_coating: 0.070
+      cu_current_collector: 0.008
+      pouch: 0.150
+      
+    winding:
+      default_n_windings: 15
+      mandrel_radius: 2.0   # 맨드릴 반경 (mm)
+      core_fill: electrolyte  # 맨드릴 제거 후 빈 공간 처리: "electrolyte" (전해질 충전) 또는 "void" (빈 공간)
+      description: "맨드릴 중심 기준 나선형 와인딩"
+      tier_definitions:
+        tier_minus1: 5
+        tier_0: 15
+        tier_0_5: 20
+        tier_1: 25
+        tier_2: 30
+        
+    tabs:
+      positive:
+        width: 10.0
+        height: 8.0
+        y_offset: 10.0    # 상단으로부터 오프셋
+        description: "양극 탭 (상단)"
+      negative:
+        width: 10.0
+        height: 8.0
+        y_offset: -10.0   # 하단 방향 오프셋
+        description: "음극 탭 (하단)"
+
+# ------------------------------------------------------------------------------
+# 임팩터 설정 (Impactor)
+# ------------------------------------------------------------------------------
+impactor:
+  cylinder:  # 원통형 임팩터 (기본)
+    radius: 7.5           # 반경 (mm)
+    length: 80.0          # 길이 (mm)
+    offset: 1.0           # 초기 간격 (mm)
+    mesh:
+      n_circumferential: 24  # 원주 방향 요소 수
+      n_radial: 4            # 반경 방향 층 수
+    description: "UN38.3 측면 충격 시험 기준 (Ø15mm 원통)"
+    
+  nail:  # 네일 관통형
+    tip_length: 3.0       # 원추부 길이 (mm)
+    tip_radius: 0.5       # 팁 반경 (mm, 뾰족함)
+    shaft_radius: 1.5     # 축부 반경 (mm)
+    shaft_length: 80.0    # 전체 길이 (mm)
+    mesh:
+      n_circumferential: 24
+      n_radial: 4
+    description: "네일 관통 시험용 (conical tip + cylindrical shaft)"
+    
+  velocity: 1000.0        # 초기 속도 (mm/s = 1 m/s)
+  velocity_description: |
+    충격 속도: UN38.3 = 1~3 m/s
+    본 시뮬레이션: 1 m/s (준정적 → 동적 천이)
+
+# ------------------------------------------------------------------------------
+# 재료 물성 (Materials)
+# ------------------------------------------------------------------------------
+materials:
+  aluminum_cc:  # MID=1
+    name: "Al 1100-O 집전체"
+    density: 2.70e-9      # ton/mm³ (2700 kg/m³)
+    youngs_modulus: 70000.0  # MPa (70 GPa)
+    poisson_ratio: 0.33
+    yield_stress: 30.0    # MPa (어닐링 상태)
+    tangent_modulus: 500.0  # MPa (경화 기울기)
+    thermal_conductivity: 0.205  # W/mm·K (205 W/m·K)
+    specific_heat: 900.0e6  # mJ/ton·K (900 J/kg·K)
+    description: |
+      양극 집전체, 매우 연한 어닐링 Al
+      전기전도도: 3.5e7 S/m (순수 Al 급)
+    source: "ASM Metals Handbook"
+    element_type: "Shell (ELFORM=2, Belytschko-Tsay)"
+    
+  copper_cc:  # MID=2
+    name: "Cu 무산소동 집전체"
+    density: 8.96e-9      # ton/mm³ (8960 kg/m³)
+    youngs_modulus: 120000.0  # MPa (120 GPa)
+    poisson_ratio: 0.34
+    yield_stress: 70.0    # MPa (어닐링 상태)
+    tangent_modulus: 800.0  # MPa
+    thermal_conductivity: 0.400  # W/mm·K (400 W/m·K)
+    specific_heat: 385.0e6  # mJ/ton·K (385 J/kg·K)
+    description: |
+      음극 집전체, OFHC (Oxygen-Free High Conductivity) Cu
+      전기전도도: 5.96e7 S/m
+    source: "ASM Metals Handbook"
+    element_type: "Shell (ELFORM=2)"
+    
+  nmc_cathode:  # MID=3
+    name: "NMC622 양극 복합재 (활물질 + 바인더 + 도전재)"
+    density: 2.50e-9      # ton/mm³ (2500 kg/m³)
+    youngs_modulus: 800.0   # MPa (다공성 복합재)
+    poisson_ratio: 0.30
+    yield_stress: 5.0     # MPa (취성 재료, 낮은 항복)
+    shear_modulus: 300.0  # MPa (G = E/2(1+ν))
+    bulk_modulus: 666.0   # MPa
+    thermal_conductivity: 0.0018  # W/mm·K (1.8 W/m·K)
+    specific_heat: 1100.0e6  # mJ/ton·K (1100 J/kg·K)
+    description: |
+      LiNi₀.₆Mn₀.₂Co₀.₂O₂ (NMC622) + PVDF 바인더 + Carbon black
+      다공도: ~30%, 열전도도 매우 낮음 (리튬 이온 배터리 특성)
+    source: "Chen et al., J. Electrochem. Soc. 2020"
+    element_type: "Solid (ELFORM=1, 상수 응력)"
+    element_formulation: "ALE or Lagrangian"
+    
+  graphite_anode:  # MID=4
+    name: "흑연 음극 복합재"
+    density: 1.80e-9      # ton/mm³ (1800 kg/m³)
+    youngs_modulus: 500.0   # MPa (NMC보다 soft)
+    poisson_ratio: 0.28
+    yield_stress: 3.0     # MPa (매우 연함)
+    shear_modulus: 195.0  # MPa
+    bulk_modulus: 347.0   # MPa
+    thermal_conductivity: 0.0015  # W/mm·K (1.5 W/m·K)
+    specific_heat: 1200.0e6  # mJ/ton·K (1200 J/kg·K)
+    description: |
+      인조 흑연 + CMC/SBR 바인더 + Carbon black
+      다공도: ~40%, 음극은 양극보다 더 부드러움
+    source: "Sahraei et al., J. Power Sources 2014"
+    element_type: "Solid (ELFORM=1)"
+    
+  separator:  # MID=5
+    name: "PE 세라믹 코팅 분리막"
+    density: 0.95e-9      # ton/mm³ (950 kg/m³)
+    youngs_modulus: 300.0   # MPa (폴리머, 비등방성)
+    poisson_ratio: 0.35
+    yield_stress: 20.0    # MPa (천공 시작)
+    thermal_conductivity: 0.00033  # W/mm·K (0.33 W/m·K, 매우 낮음)
+    specific_heat: 1900.0e6  # mJ/ton·K (1900 J/kg·K)
+    erosion:
+      effective_strain: 0.55  # 55% 변형률에서 천공
+      description: "내부 단락 트리거: 분리막 파손 → EM_RANDLES_SHORT"
+    description: |
+      Celgard 2325 (PP/PE/PP trilayer) + Al₂O₃ 세라믹 코팅
+      두께 20 µm, 천공 저항 중요 (ISC 방지)
+    source: "Celgard 데이터시트, Sahraei et al."
+    element_type: "Shell (ELFORM=16, Fully Integrated)"
+    
+  pouch:  # MID=6
+    name: "Al/PE 라미네이트 파우치"
+    density: 1.50e-9      # ton/mm³ (1500 kg/m³)
+    youngs_modulus: 2000.0  # MPa (복합 라미네이트)
+    poisson_ratio: 0.30
+    yield_stress: 80.0    # MPa (필름 인열 강도)
+    thermal_conductivity: 0.0002  # W/mm·K (0.2 W/m·K, 단열)
+    specific_heat: 1400.0e6  # mJ/ton·K (1400 J/kg·K)
+    description: |
+      3-layer: Al (40 µm) / Nylon (25 µm) / PE (88 µm)
+      전체 153 µm, 기밀성 + 열차단 역할
+    source: "DNP 파우치 사양서"
+    element_type: "Shell (ELFORM=2)"
+    
+  rigid_material:  # MID=7
+    name: "강체 재료 (임팩터, PCM 보드)"
+    density: 7.85e-9      # ton/mm³ (7850 kg/m³, 강철 수준)
+    youngs_modulus: 210000.0  # MPa (210 GPa, 강철)
+    poisson_ratio: 0.30
+    description: |
+      *MAT_RIGID 전용: 탄성 변형 없음, 관성만 고려
+      임팩터(실린더/네일), PCM 보드(FR4 기판)에 사용
+    source: "LS-DYNA 표준 강체 물성"
+    element_type: "Solid (ELFORM=1)"
+    
+  electrolyte:  # MID=8
+    name: "액체 전해질 (LiPF₆/EC+DMC)"
+    density: 1.20e-9      # ton/mm³ (1200 kg/m³)
+    bulk_modulus: 2000.0  # MPa (비압축성 유체 근사)
+    viscosity: 0.003      # Pa·s (3 cP)
+    thermal_conductivity: 0.0006  # W/mm·K (0.6 W/m·K)
+    specific_heat: 1600.0e6  # mJ/ton·K (1600 J/kg·K)
+    description: |
+      LiPF₆ 1M in EC:DMC (1:1) 전해액
+      ALE 유동 시뮬레이션용 (현재 비활성)
+    source: "Valøen & Reimers, J. Electrochem. Soc. 2005"
+    element_type: "ALE Solid (ELFORM=-1)"
+    status: "현재 비활성 (07_control.k에서 CONTROL_ALE 주석)"
+
+# ------------------------------------------------------------------------------
+# 메시 파라미터 (Mesh Parameters)
+# ------------------------------------------------------------------------------
+mesh:
+  stacked:
+    element_size_xy: 2.5    # 면내 요소 크기 (mm)
+    element_size_description: |
+      Tier -1: 5.0 mm (디버깅)
+      Tier 0: 2.5 mm (베이스라인)
+      Tier 0.5~2: 0.5~1.0 mm (프로덕션)
+    
+    through_thickness_elements:
+      cathode: 1      # NMC 양극 코팅 두께 방향
+      anode: 1        # Graphite 음극 코팅 두께 방향
+      description: "Solid 요소만. Shell은 두께 방향 1개로 고정"
+      
+  wound:
+    element_size_xy: 2.5
+    element_size_circumferential: 2.5  # 호 방향 요소 크기 (mm)
+    mandrel_mesh_divisions: 12    # 맨드릴 원주 분할 수
+    
+    through_thickness_elements:
+      cathode: 1      # NMC 양극 코팅 두께 방향
+      anode: 1        # Graphite 음극 코팅 두께 방향
+      description: "Solid 요소만. Shell은 두께 방향 1개로 고정"
+    
+  common:
+    element_formulation:
+      shell: 2        # ELFORM=2 (Belytschko-Tsay)
+      shell_full: 16  # ELFORM=16 (Fully Integrated, 분리막)
+      solid: 1        # ELFORM=1 (Constant Stress Solid)
+    
+    quality_criteria:
+      aspect_ratio_max: 5.0
+      jacobian_min: 0.6
+      warpage_max: 15.0  # degrees
+      description: "LS-DYNA 권장 메시 품질 기준"
+
+# ------------------------------------------------------------------------------
+# EM Randles 회로 파라미터
+# ------------------------------------------------------------------------------
+em_randles:
+  cell_parameters:
+    capacity_Q: 2.6         # Ah (2600 mAh)
+    capacity_description: "스마트폰 표준 배터리 용량"
+    
+    CQ_factor: 0.0278       # 1/36 (SOC %/s 변환, LS-DYNA 내부 단위)
+    CQ_description: "LS-DYNA Vol_III p.518 기준"
+    
+    initial_soc: 0.5        # 50% 충전 상태
+    soc_description: "열폭주 위험이 가장 높은 SOC (40-60%)"
+    
+  circuit_components:
+    # TABLE 기반 SOC×Temperature 2D 보간 (LSTC 공식 예제 패턴)
+    # 음수 TABLE ID → EM_RANDLES_SOLID Card 3에 기입
+    table_ids:
+      R0CHA:  -8001       # TABLE 8001: R0 충전 vs SOC×Temperature
+      R0DIS:  -8002       # TABLE 8002: R0 방전 vs SOC×Temperature
+      R10CHA: -8003       # TABLE 8003: R1 충전 vs SOC×Temperature
+      R10DIS: -8004       # TABLE 8004: R1 방전 vs SOC×Temperature
+      C10CHA: -8005       # TABLE 8005: C1 충전 vs SOC×Temperature
+      C10DIS: -8006       # TABLE 8006: C1 방전 vs SOC×Temperature
+    
+    # 대표값 (TABLE 중앙값 참고)
+    R0:  # 내부 저항
+      value: 0.030          # Ω (30 mΩ) — TABLE 298K/SOC=0.5 기준
+      range: [0.006, 0.065] # Ω (TABLE 전체 범위)
+      description: "직렬 내부 저항 (전해질 + 집전체)"
+      source: "EIS 측정 (Electrochemical Impedance Spectroscopy)"
+      
+    R1:  # 전하전달 저항
+      value: 0.025          # Ω (25 mΩ) — TABLE 298K/SOC=0.5 기준
+      range: [0.005, 0.050] # Ω (TABLE 전체 범위)
+      description: "전하전달 저항 (전극 계면 반응)"
+      source: "EIS 측정, Randles 등가회로"
+      
+    C1:  # 이중층 커패시턴스
+      value: 1000.0         # F — TABLE 298K/SOC=0.5 기준
+      range: [600.0, 2000.0] # F (TABLE 전체 범위)
+      description: "전기화학 이중층 커패시턴스"
+      source: "고용량 LIB 표준값"
+      
+  soc_shift:
+    enabled: true           # USESOCS=1
+    tau: 1000.0             # TAUSOCS: SOC shift 시정수 (s)
+    curve_id: -2004         # SICSLCID: DEFINE_CURVE 2004 (SOC→shift%)
+    description: "SOC shift: 고전류 방전 시 가용 SOC 감소 효과 (LSTC basic_socshift 패턴)"
+    
+  isopotential:
+    external_load_resistance: 0.05  # Ω (EM_ISOPOTENTIAL_CONNECT connType=2)
+    description: "양극/음극 탭 동전위면 + 직렬 연결 + 접지"
+      
+  short_circuit:
+    function_id: 5001       # EM_RANDLES_SHORT FUNCTID
+    resistance_multiplier: 0.001  # 단락 시 저항 배율 (R → R/1000)
+    description: |
+      분리막 침식(EROSION) → 내부 단락 트리거
+      R0 30mΩ → 0.03mΩ (1000배 감소)
+      
+  exothermic_reaction:
+    function_id: 5002       # EM_RANDLES_EXOTHERMIC_REACTION FUNCTID
+    activation_temperature: 393.15  # K (120°C)
+    heat_release_rate: 5000.0  # W (5 kW, 열폭주 시작)
+    description: |
+      열폭주 시뮬레이션: T > 120°C → 발열 반응 시작
+      실제 배터리: 140-180°C에서 열폭주
+      
+  external_circuit:
+    circuit_type: 1         # CIRCTYP=1 (저항 부하)
+    load_curve_id: 2003     # 외부 부하 저항 커브
+    description: "외부 회로: 초기 개방 → 단락 후 저항 부하"
+    
+  em_solver:
+    em_solution_type: 3     # EMSOL=3 (Resistive heating)
+    thermal_coupling: 2     # THCPL=2 (Element-level Joule heating)
+    structural_coupling: 1  # SMCPL=1 (Lorentz force)
+    timestep_type: 5        # TSTYPE=5 (EM = thermal timestep)
+    timestep_const: 0.001   # s (1 ms)
+    description: "EM-열-구조 완전 연성 솔버"
+
+# ------------------------------------------------------------------------------
+# 접촉 파라미터 (Contact Parameters)
+# ------------------------------------------------------------------------------
+contacts:
+  impactor_pouch:
+    contact_type: "AUTOMATIC_SURFACE_TO_SURFACE"
+    cid: 1
+    static_friction: 0.30
+    dynamic_friction: 0.20
+    description: "임팩터 ↔ 파우치 충돌 (ASTS)"
+    source: "폴리머 필름 vs 강철 표준 마찰계수"
+    
+  cell_self_contact:
+    contact_type: "AUTOMATIC_SINGLE_SURFACE"
+    cid: 2
+    static_friction: 0.20
+    dynamic_friction: 0.15
+    soft_constraint: 2
+    softness_scale: 0.1
+    description: "셀 내부 자기접촉 (ASS, 층 파손 후)"
+    
+  tied_thermal:
+    base_cid: 301           # 시작 CID
+    contact_type: "TIED_SURFACE_TO_SURFACE_THERMAL"
+    
+    thermal_conductance:
+      metal_metal: 100.0    # W/mm·K (Al↔NMC, Graphite↔Cu)
+      coating_separator: 50.0  # W/mm·K (NMC↔분리막, 분리막↔Graphite)
+      inter_uc: 80.0        # W/mm·K (Cu↔Al, 다른 UC 간)
+      description: |
+        층간 열전달 계면 컨덕턴스
+        금속-코팅 > 코팅-분리막 (접촉 저항 차이)
+      source: "Zhao et al., Int. J. Heat Mass Transfer 2015"
+      
+  eroding_contact:
+    contact_type: "ERODING_SINGLE_SURFACE"
+    cid: 401
+    description: "요소 침식 후 자동 제거 (분리막 파손 추적)"
+    
+  pouch_stack_tied:
+    cid_range: [501, 502]
+    description: "파우치(상하) ↔ 적층 최외곽 TIED"
+    
+  pcm_tab_tied:
+    cid_range: [601, 602]
+    description: "PCM 보드 ↔ 탭 TIED"
+
+# ------------------------------------------------------------------------------
+# 경계조건 및 하중 (Boundary Conditions & Loads)
+# ------------------------------------------------------------------------------
+boundary_conditions:
+  constraints:
+    bottom_nodes:
+      dof: [1, 1, 1, 1, 1, 1]  # All DOF fixed
+      description: "하단 파우치 완전 구속 (SPC)"
+      
+  initial_conditions:
+    temperature: 298.15     # K (25°C)
+    description: "상온 초기 조건"
+    
+  loads:
+    impactor_velocity:
+      magnitude: 1000.0     # mm/s (1 m/s)
+      direction: [0.0, 0.0, -1.0]  # -Z 방향
+      curve_id: 1001
+      description: "UN38.3 충격 속도"
+
+# ------------------------------------------------------------------------------
+# 솔버 제어 (Control Parameters)
+# ------------------------------------------------------------------------------
+control:
+  phase1:  # 순수 구조 해석
+    description: "구조 해석만 (열/EM OFF), 초기 변형 확인"
+    termination_time: 5.0   # ms
+    initial_timestep: -1.0e-5  # 자동 (DT2MS)
+    solution_type:
+      implicit: 0           # SOTEFP=0 (Explicit only)
+      
+  phase2:  # 구조-열 연성
+    description: "구조-열 연성 (EM OFF), 열 발생 없음"
+    termination_time: 10.0  # ms
+    initial_timestep: -1.0e-5
+    solution_type:
+      implicit: 1           # SOTEFP=1 (Thermal implicit)
+      thermal_fwork: 0.9    # 열 convergence tolerance
+      
+  phase3:  # 완전 연성
+    description: "구조-열-EM 완전 연성, 열폭주 시뮬레이션"
+    termination_time: 60.0  # s (1분)
+    initial_timestep: -1.0e-5
+    solution_type:
+      implicit: 1
+      thermal_fwork: 0.9
+    em_control: true        # EM solver ON
+    
+  timestep:
+    mass_scaling_factor: 0.9  # TSSFAC
+    max_timestep: 1.0e-3      # s (1 ms)
+    description: "안정성 확보: CFL 조건 + 질량 스케일링"
+    
+  output:
+    database_intervals:
+      d3plot: 0.5           # s (0.5초마다)
+      glstat: 0.01          # s (10 ms)
+      matsum: 0.01
+      description: "Phase 3 출력 주기"
+      
+  hourglass:
+    control_type: 5         # IHQ=5 (Flanagan-Belytschko with exact volume)
+    coefficient: 0.1        # QH (10%)
+    description: "Reduced integration shell/solid hourglass 제어"
+    
+  bulk_viscosity:
+    quadratic_coefficient: 1.5  # Q1 (기본값)
+    linear_coefficient: 0.06    # Q2 (기본값)
+    description: "충격파 스무딩 (Shock damping)"
+
+# ------------------------------------------------------------------------------
+# Part ID 체계 (Part ID System)
+# ------------------------------------------------------------------------------
+part_ids:
+  description: |
+    PID 범위:
+      1-99:     구조 파트 (파우치, 탭, PCM 등)
+      100-199:  임팩터/지그
+      1000+:    적층 파트 (uc_idx * 10 + layer_type)
+      2000+:    와인딩 파트 (단일 세트)
+      
+  structural:
+    pouch_top: 10
+    pouch_bottom: 11
+    pouch_side: 12
+    tab_positive: 20
+    tab_negative: 21
+    pcm_positive: 30
+    pcm_negative: 31
+    electrolyte: 13
+    
+  impactor:
+    cylinder: 100
+    nail: 101
+    
+  layer_type_codes:
+    al_cc: 1        # 양극 집전체
+    cathode: 2      # NMC 양극
+    separator: 3    # 분리막
+    anode: 4        # 흑연 음극
+    cu_cc: 5        # 음극 집전체
+    
+  stacked_formula: "1000 + uc_index * 10 + layer_type"
+  wound_base: 2000
+
+# ------------------------------------------------------------------------------
+# Material ID 체계 (Material ID System)
+# ------------------------------------------------------------------------------
+material_ids:
+  aluminum_cc: 1
+  copper_cc: 2
+  nmc_cathode: 3
+  graphite_anode: 4
+  separator: 5
+  pouch: 6
+  rigid_material: 7
+  electrolyte: 8
+  
+# ------------------------------------------------------------------------------
+# Section ID 체계 (Section ID System)
+# ------------------------------------------------------------------------------
+section_ids:
+  shell_belytschko_tsay: 1    # ELFORM=2 (집전체, 파우치)
+  shell_fully_integrated: 2   # ELFORM=16 (분리막)
+  solid_constant_stress: 3    # ELFORM=1 (전극 코팅)
+  solid_impactor: 4           # 강체 솔리드
+
+# ------------------------------------------------------------------------------
+# Part Set / Node Set 체계
+# ------------------------------------------------------------------------------
+sets:
+  part_sets:
+    impactor: 100
+    pouch: 101
+    all_cell: 102
+    all_cathode: 103
+    all_anode: 104
+    all_separator: 105
+    al_cc_all: 106    # 모든 Al CC (PCM 접촉용)
+    cu_cc_all: 107    # 모든 Cu CC
+    
+  node_sets:
+    bottom_spc: 1001
+    top_monitor: 1002
+    tab_positive: 1010
+    tab_negative: 1011
+
+# ------------------------------------------------------------------------------
+# 로드 커브 ID (Load Curve IDs)
+# ------------------------------------------------------------------------------
+load_curves:
+  impactor_velocity: 1001
+  compression_test: 1002
+  external_circuit_load: 2003
+  thermal_ramp: 3001
+  randles_short: 5001
+  exothermic_reaction: 5002
+
+# ------------------------------------------------------------------------------
+# 파일 출력 설정
+# ------------------------------------------------------------------------------
+output_files:
+  mesh:
+    stacked_prefix: "02_mesh_stacked"
+    wound_prefix: "03_mesh_wound"
+    tier_suffixes:
+      tier_minus1: "_tier-1"
+      tier_0: "_tier0"
+      tier_0_5: "_tier0_5"
+      tier_1: "_tier1"
+      tier_2: "_tier2"
+      
+  contacts:
+    prefix: "05_contacts"
+    phases: ["phase1", "phase2", ""]  # "" = phase3 (기본)
+    
+  em_randles:
+    prefix: "08_em_randles"
+    
+  materials:
+    filename: "04_materials.k"
+    temperature_dependent: "04_materials_tempdep.k"
+    
+  boundary_loads:
+    filename: "06_boundary_loads.k"
+    
+  control:
+    filename: "07_control.k"
+    
+  database:
+    filename: "09_database.k"
+    
+  curves:
+    filename: "10_define_curves.k"
+
+# ------------------------------------------------------------------------------
+# 시나리오 파라미터 (Scenario Parameters)
+# ------------------------------------------------------------------------------
+# 기존 impact 시나리오와 독립적으로 실행되는 추가 시뮬레이션 시나리오 정의.
+# generate_full_model.py 가 이 섹션을 읽어 시나리오별 k-file 세트를 자동 생성.
+# ------------------------------------------------------------------------------
+scenarios:
+  swelling:
+    description: "독립 스웰링 시나리오 — 인터칼레이션 변형(가역) + SEI 성장(비가역)"
+    n_cycles: 2                  # 시뮬레이션 CC-CV 사이클 수
+    c_rate_charge: 0.5           # 충전 C-rate (정격 용량 배수)
+    c_rate_discharge: 1.0        # 방전 C-rate
+    cv_cutoff_voltage: 4.2       # V — CC→CV 전환 전압 (NMC622 상한)
+    cv_cutoff_current_frac: 0.05 # CV 단계 종료 기준: 정격 전류의 5%
+    intercalation:
+      graphite_cte: 0.035        # 흑연 인터칼레이션 선형 변형률 (SOC=1 → 3.5%)
+      nmc_cte: 0.015             # NMC622 인터칼레이션 선형 변형률 (SOC=1 → 1.5%)
+      description: |
+        인터칼레이션 CTE: SOC 변화에 따른 두께 방향 선형 변형률.
+        Graphite: c-축 팽창 3.0-3.7%, NMC622: 1.0-2.0%.
+        출처: Zhao et al., J. Electrochem. Soc. 2011.
+    sei_growth:
+      pre_exponential: 1.5e-6    # A_pre (m/√s) — Ramadass 2004 Arrhenius 계수
+      activation_energy: 40000   # J/mol — SEI 성장 활성화 에너지
+      initial_thickness: 5.0e-9  # m — 초기 SEI 두께 (≈5 nm, 신품 셀)
+      max_thickness: 50.0e-9     # m — 최대 SEI 두께 (≈50 nm, 수명 말기)
+      description: |
+        SEI 성장 모델: δ(t,T) = δ₀ + A_pre·√t·exp(-Ea/(R·T))
+        실온(298K) 단기 시뮬레이션에서는 기여도 무시 가능.
+        열화(aging) 연구 및 고온 사이클링에서 유의미.
+        출처: Ramadass et al., J. Electrochem. Soc. 2004.
+    end_time: 7200.0             # s — 총 시뮬레이션 시간 (≈1 CC-CV full cycle)
+
+  gas:
+    description: "독립 가스팽창 시나리오 — 외부 가열 → 가스 발생 → 파우치 팽창/파열"
+    heat_source:
+      type: "external"           # 외부 히터 방식 (BOUNDARY_HEAT_SET)
+      heat_flux_density: 5000.0  # W/m² — 외부 히터 열플럭스 밀도
+      ramp_time: 60.0            # s — 0에서 최대까지 경사 상승 시간
+      plateau_time: 3600.0       # s — 최대 플럭스 유지 시간
+      description: |
+        열플럭스 단위 변환: 5000 W/m² = 5.0 mJ/(s·mm²) [mm-ton-s 단위계]
+        파우치 외부 세그먼트 집합(SID=3)에 적용 (BOUNDARY_HEAT_SET).
+    gas_generation:
+      # 하위호환용 flat 필드 (stages가 있으면 무시됨)
+      onset_temperature: 373.0   # K — 가스 발생 시작 온도 (100°C)
+      activation_energy: 80000   # J/mol — Arrhenius 활성화 에너지
+      pre_exponential: 1.0e+12   # 사전 지수 인자 (1/s)
+      # 2-stage Arrhenius 모델 (stages 우선)
+      stages:
+        sei_decomposition:
+          onset_temperature: 353.0     # K (80°C) — SEI 분해 시작
+          activation_energy: 60000     # J/mol
+          pre_exponential: 1.0e6       # 1/s
+        electrolyte_decomposition:
+          onset_temperature: 423.0     # K (150°C) — 전해질 분해 시작
+          activation_energy: 80000     # J/mol
+          pre_exponential: 1.0e8       # 1/s
+      molecular_weight: 40.0           # g/mol — 분해 가스 평균 분자량 (CO2/H2/C2H4)
+      max_rate: 1.0e-7                 # ton/s — 최대 가스 발생율 제한
+      description: |
+        2-stage Arrhenius: SEI 분해(80°C) + 전해질 분해(150°C).
+        FUNCTID 12010 in 12_venting.k, AIRBAG LCID=-12010.
+    venting:
+      # AIRBAG 열역학 물성 (분해 가스 혼합물)
+      cv: 723.0                        # J/kg/K — 정적 비열 (CO2 근사)
+      cp: 1004.0                       # J/kg/K — 정압 비열
+      initial_temperature: 298.15      # K — 유입 가스 초기 온도
+      discharge_coefficient: 0.6       # 오리피스 형상 계수 MU (typical 0.5-0.8)
+      atmospheric_pressure: 0.1        # MPa — 대기압 (1 atm)
+      atmospheric_density: 1.0e-9      # ton/mm³ — 대기 밀도 (≈ 1.2 kg/m³)
+      # 벤팅 면적 vs 절대압력 커브 (safety valve / burst disk 모델)
+      vent_area_curve:                  # → LCID 12003
+        - [0.0,   0.0]                 # P < 0.2 MPa: 벤팅 없음
+        - [0.1,   0.0]
+        - [0.2,   0.0]
+        - [0.3,   0.2]                 # 안전밸브 개방 시작 (게이지 0.2 MPa)
+        - [0.4,   0.8]
+        - [0.6,   1.6]                 # 거의 완전 개방
+        - [1.0,   2.0]                 # 파우치 파열 — 최대 면적 2 mm²
+        - [2.0,   2.0]
+        - [5.0,   2.0]
+        - [10.0,  2.0]
+      description: |
+        AIRBAG_SIMPLE_AIRBAG_MODEL: SID=503 파우치 내면 세그먼트.
+        벤팅 커브(LCID 12003): 절대압력(MPa) vs 출구면적(mm²).
+    end_time: 3600.0             # s — 총 시뮬레이션 시간 (1시간)
+
+# ------------------------------------------------------------------------------
+# 검증 및 단위 변환 헬퍼
+# ------------------------------------------------------------------------------
+validation:
+  dimension_checks:
+    unit_cell_thickness_min: 0.2   # mm
+    unit_cell_thickness_max: 0.3   # mm
+    total_cell_thickness_max: 10.0  # mm
+    
+  material_checks:
+    density_min: 1.0e-10   # ton/mm³
+    density_max: 2.0e-8    # ton/mm³
+    youngs_modulus_min: 100.0  # MPa
+    
+  mesh_quality:
+    warn_aspect_ratio: 5.0
+    error_aspect_ratio: 10.0
+    warn_jacobian: 0.6
+    
+conversion_factors:
+  kg_to_ton: 0.001
+  m_to_mm: 1000.0
+  Pa_to_MPa: 1.0e-6
+  J_to_mJ: 1000.0
+  W_per_mK_to_W_per_mmK: 0.001
+  S_per_m_to_S_per_mm: 0.001

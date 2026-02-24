@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# pytest
+.pytest_cache/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Logs
+*.log
+
+# Large auto-generated mesh files (regenerate with generate_mesh_*.py)
+Battery/02_mesh_stacked.k
+Battery/02_mesh_stacked_production.k
+Battery/02_mesh_stacked_tier0_5.k
+Battery/02_mesh_stacked_tier1.k
+Battery/03_mesh_wound.k
+Battery/03_mesh_wound_production.k
+Battery/03_mesh_wound_tier0_5.k
+Battery/03_mesh_wound_tier1.k
+Battery/Examples/batmac_nail/mesh8_1.k

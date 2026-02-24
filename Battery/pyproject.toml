@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "battery-simulation"
+version = "1.0.0"
+description = "LS-DYNA R16 리튬이온 배터리 멀티피직스 시뮬레이션 자동화"
+readme = "RUN_GUIDE.md"
+requires-python = ">=3.9"
+license = {text = "Proprietary"}
+authors = [
+    {name = "KooDynaAdvanced"},
+]
+
+dependencies = [
+    "numpy>=1.21.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.5.0"]
+doe = ["scipy>=1.7.0", "matplotlib>=3.5.0"]
+docx = ["pypandoc-binary>=1.11", "python-docx>=0.8.11", "lxml>=4.9.0"]
+all = [
+    "matplotlib>=3.5.0",
+    "scipy>=1.7.0",
+    "pypandoc-binary>=1.11",
+    "python-docx>=0.8.11",
+    "lxml>=4.9.0",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+battery = "battery_cli:main"
+
+[tool.setuptools]
+py-modules = [
+    "battery_utils",
+    "battery_cli",
+    "generate_mesh_stacked",
+    "generate_mesh_wound",
+    "generate_em_randles",
+    "generate_contacts",
+    "generate_all_tiers",
+    "prepare_run",
+    "convergence_study",
+    "doe_framework",
+    "estimate_runtime",
+    "postprocess_results",
+    "export_docx",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.pyright]
+reportPrivateUsage = false
