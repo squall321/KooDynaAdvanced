@@ -19,13 +19,14 @@ $ ==================== Timestep ====================
 $
 *CONTROL_TIMESTEP
 $   DTINIT    TSSFAC      ISDO    TSLIMT     DT2MS     LCTM     ERODE     MS1ST
-       0.0      0.90         0       0.0 -1.00E-06         0         0         0
+       0.0      0.90         0  1.0E-08 -1.00E-06         0         0         0
 $
 $ ==================== Hourglass ====================
+$ Global default only — battery-specific HG via *HOURGLASS + HGID in mesh
 $
 *CONTROL_HOURGLASS
 $      IHQ        QH
-         5      0.05
+         1      0.10
 $
 $ ==================== Shell ====================
 $
@@ -63,11 +64,11 @@ $ ==================== Thermal Solver ====================
 $
 *CONTROL_THERMAL_SOLVER
 $     APTS    SOLVER       GPT      ETEFP     FWORK
-         1        12         0         0      0.90
+         1         3         0         0      0.90
 $
 *CONTROL_THERMAL_TIMESTEP
 $       TS       TIP       ITS      TMIN      TMAX       DTA       LCC      LCTM
-       0.0       0.5       0.0   1.0E-06      0.01       0.0         0         0
+       0.0       0.5  1.0E-07  1.0E-08      0.01       0.0         0         0
 $
 *CONTROL_THERMAL_NONLINEAR
 $    REFMAX     TOLRF       DCP

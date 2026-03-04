@@ -43,11 +43,14 @@ def _write_spc(f, nsid: int = 1) -> None:
     f.write("$\n")
 
 
-def _write_impactor_motion(f, lcid: int = 3001, nsid: int = 2) -> None:
+def _write_impactor_motion(f, velocity: float = -1000.0, nsid: int = 2) -> None:
+    """임팩터 초기속도 (INITIAL_VELOCITY) — 자유비행 충격"""
     f.write("$ ==================== Impactor ====================\n$\n")
-    f.write("*BOUNDARY_PRESCRIBED_MOTION_SET\n")
-    f.write("$     NSID       DOF       VAD      LCID        SF       VID     DEATH     BIRTH\n")
-    f.write(f"{nsid:>10d}         1         0{lcid:>10d}      -1.0         0  1.0E+28       0.0\n")
+    f.write("*INITIAL_VELOCITY\n")
+    f.write("$     NSID    NSIDEX     BOXID    IRIGID\n")
+    f.write(f"{nsid:>10d}         0         0         0\n")
+    f.write("$       VX        VY        VZ       VRX       VRY       VRZ\n")
+    f.write(f"{velocity:>10.1f}       0.0       0.0       0.0       0.0       0.0\n")
     f.write("$\n")
 
 
@@ -186,7 +189,8 @@ def generate_boundary_loads(config: Dict[str, Any], phase: int = 3,
         f.write("$---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8\n")
 
         _write_spc(f)
-        _write_impactor_motion(f)
+        imp_vel = -abs(float(config.get("impactor", {}).get("velocity", 1000.0)))
+        _write_impactor_motion(f, velocity=imp_vel)
 
         if phase >= 2:
             _write_thermal_bc(f, config)

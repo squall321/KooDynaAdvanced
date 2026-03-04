@@ -21,13 +21,15 @@ $    EMSOL     NUMLS              DIMTYPE    NPERIO            NCYLFEM   NCYLBEM
          3        50                    3         0                  1         0
 $
 $ EMSOL=3: Resistive heating (배터리 단락 줄열에 적합)
+$ DIMTYPE=3: 전도 전용 (BEM 없음, SET_SEGMENT/외부 경계 불필요)
+$ NCYLBEM=0: BEM 사이클 없음
 $
 *EM_CONTROL_COUPLING
 $    THCPL     SMCPL     THLCID    SMLCID   THCPLFL   SMCPLFL
          2         0          0         0         0         0
 $
 $ THCPL=2: Element-level Joule heating (Randles 배터리에 권장)
-$ SMCPL=1: Lorentz force → 구조 연성
+$ SMCPL=0: Lorentz force OFF (배터리 셀에 불필요, BEM 세그먼트 불필요)
 $
 *EM_CONTROL_TIMESTEP
 $   TSTYPE   DTCONST      LCID    FACTOR     TSMIN     TSMAX     RLCSF    MECATS
@@ -45,6 +47,7 @@ $
 $ 삭제된 요소를 EM 계산에서 제거
 $ Card 1: ECTRL (1=ON: 침식 요소를 EM 행렬에서 제거)
          1
+$
 $
 $ ==================== EM MATERIAL CONDUCTIVITY ====================
 $

@@ -4,7 +4,7 @@ Li-ion Cell - EM Randles Circuit & Electrochemistry
 $
 $ ============================================================
 $ EM + Randles 분포 회로 (EM_RANDLES_SOLID 접근법)
-$ 
+$
 $ 전략:
 $   - 각 층(CCP, 양극, 분리막, 음극, CCN) 개별 Part 구성
 $   - 분리막 erosion → EM_RANDLES_SHORT → 내부 단락
@@ -81,13 +81,259 @@ $ MID 7: PCM/Impactor, EM inactive
          8         1
 $ MID 8: Electrolyte, non-conductor
 $
+$ ==================== SOC×Temperature TABLES ====================
+$
+$ LSTC batmac_table 패턴: R0/R1/C1을 SOC×온도 2D TABLE로 정의
+$ RANDLES 카드에서 음수 값 = TABLE ID 참조
+$
+$ TABLE 8001: R0 충전 → R0CHA
+*DEFINE_TABLE
+$     TBID
+      8001
+$           Temperature(K)    LCID
+              273.15      8011
+              298.15      8012
+              323.15      8013
+              373.15      8014
+              473.15      8015
+$
+*DEFINE_CURVE
+      8011
+             0.0            0.06
+             0.2            0.05
+             0.5           0.045
+             0.8            0.05
+             1.0            0.06
+*DEFINE_CURVE
+      8012
+             0.0           0.035
+             0.2            0.03
+             0.5           0.028
+             0.8            0.03
+             1.0           0.035
+*DEFINE_CURVE
+      8013
+             0.0           0.025
+             0.2            0.02
+             0.5           0.018
+             0.8            0.02
+             1.0           0.025
+*DEFINE_CURVE
+      8014
+             0.0           0.015
+             0.2           0.012
+             0.5            0.01
+             0.8           0.012
+             1.0           0.015
+*DEFINE_CURVE
+      8015
+             0.0            0.01
+             0.2           0.008
+             0.5           0.006
+             0.8           0.008
+             1.0            0.01
+$
+$ TABLE 8002: R0 방전 → R0DIS
+*DEFINE_TABLE
+$     TBID
+      8002
+$           Temperature(K)    LCID
+              273.15      8021
+              298.15      8022
+              323.15      8023
+              373.15      8024
+              473.15      8025
+$
+*DEFINE_CURVE
+      8021
+             0.0           0.065
+             0.2           0.055
+             0.5            0.05
+             0.8           0.055
+             1.0           0.065
+*DEFINE_CURVE
+      8022
+             0.0            0.04
+             0.2           0.035
+             0.5           0.032
+             0.8           0.035
+             1.0            0.04
+*DEFINE_CURVE
+      8023
+             0.0            0.03
+             0.2           0.025
+             0.5           0.022
+             0.8           0.025
+             1.0            0.03
+*DEFINE_CURVE
+      8024
+             0.0           0.018
+             0.2           0.015
+             0.5           0.012
+             0.8           0.015
+             1.0           0.018
+*DEFINE_CURVE
+      8025
+             0.0           0.012
+             0.2            0.01
+             0.5           0.008
+             0.8            0.01
+             1.0           0.012
+$
+$ TABLE 8003: R1 충전 → R10CHA
+*DEFINE_TABLE
+$     TBID
+      8003
+$           Temperature(K)    LCID
+              273.15      8031
+              298.15      8032
+              323.15      8033
+              373.15      8034
+              473.15      8035
+$
+*DEFINE_CURVE
+      8031
+             0.0            0.04
+             0.5           0.035
+             1.0            0.04
+*DEFINE_CURVE
+      8032
+             0.0           0.025
+             0.5            0.02
+             1.0           0.025
+*DEFINE_CURVE
+      8033
+             0.0           0.018
+             0.5           0.015
+             1.0           0.018
+*DEFINE_CURVE
+      8034
+             0.0            0.01
+             0.5           0.008
+             1.0            0.01
+*DEFINE_CURVE
+      8035
+             0.0           0.006
+             0.5           0.005
+             1.0           0.006
+$
+$ TABLE 8004: R1 방전 → R10DIS
+*DEFINE_TABLE
+$     TBID
+      8004
+$           Temperature(K)    LCID
+              273.15      8041
+              298.15      8042
+              323.15      8043
+              373.15      8044
+              473.15      8045
+$
+*DEFINE_CURVE
+      8041
+             0.0            0.05
+             0.5            0.04
+             1.0            0.05
+*DEFINE_CURVE
+      8042
+             0.0            0.03
+             0.5           0.025
+             1.0            0.03
+*DEFINE_CURVE
+      8043
+             0.0           0.022
+             0.5           0.018
+             1.0           0.022
+*DEFINE_CURVE
+      8044
+             0.0           0.012
+             0.5            0.01
+             1.0           0.012
+*DEFINE_CURVE
+      8045
+             0.0           0.008
+             0.5           0.006
+             1.0           0.008
+$
+$ TABLE 8005: C1 충전 → C10CHA
+*DEFINE_TABLE
+$     TBID
+      8005
+$           Temperature(K)    LCID
+              273.15      8051
+              298.15      8052
+              323.15      8053
+              373.15      8054
+              473.15      8055
+$
+*DEFINE_CURVE
+      8051
+             0.0             600
+             0.5             800
+             1.0             600
+*DEFINE_CURVE
+      8052
+             0.0             800
+             0.5            1000
+             1.0             800
+*DEFINE_CURVE
+      8053
+             0.0            1000
+             0.5            1200
+             1.0            1000
+*DEFINE_CURVE
+      8054
+             0.0            1200
+             0.5            1500
+             1.0            1200
+*DEFINE_CURVE
+      8055
+             0.0            1500
+             0.5            2000
+             1.0            1500
+$
+$ TABLE 8006: C1 방전 → C10DIS
+*DEFINE_TABLE
+$     TBID
+      8006
+$           Temperature(K)    LCID
+              273.15      8061
+              298.15      8062
+              323.15      8063
+              373.15      8064
+              473.15      8065
+$
+*DEFINE_CURVE
+      8061
+             0.0             600
+             0.5             800
+             1.0             600
+*DEFINE_CURVE
+      8062
+             0.0             800
+             0.5            1000
+             1.0             800
+*DEFINE_CURVE
+      8063
+             0.0            1000
+             0.5            1200
+             1.0            1000
+*DEFINE_CURVE
+      8064
+             0.0            1200
+             0.5            1500
+             1.0            1200
+*DEFINE_CURVE
+      8065
+             0.0            1500
+             0.5            2000
+             1.0            1500
+$
 $ ==================== RANDLES CIRCUITS ====================
 $
 $ R0/R1/C1: 음수 TABLE ID → SOC×Temperature 2D 보간
 $   -8001: R0CHA, -8002: R0DIS
 $   -8003: R10CHA, -8004: R10DIS
 $   -8005: C10CHA, -8006: C10DIS
-$ TABLE 정의 → 08_em_randles.k 에 포함
 $
 $ --- Randles for Unit Cell 0 ---
 *EM_RANDLES_SOLID
@@ -145,58 +391,51 @@ $
 $ --- Total Randles circuits: 5 (RDLID 1~5) ---
 $
 $ ==================== INTERNAL SHORT CIRCUIT ====================
+$ (Step 1: ISC 비활성 — Step 2에서 활성화)
+$*EM_RANDLES_SHORT
+$         2      5001
 $
-*EM_RANDLES_SHORT
-$  AREATYPE   FUNCTID
-         2      5001
-$
-$ AREATYPE=2: 전체 셀 면적 대비 스케일링
-$ FUNCTID=5001: LSTC 20인수 공식 시그니처
-$   양수 반환 = 단락 저항(Ω), 음수 반환 = 단락 없음
-$
-$ ==================== EXOTHERMIC REACTION (열폭주) ======================================
-$
-*EM_RANDLES_EXOTHERMIC_REACTION
-$  AREATYPE   FUNCTID
-         2      5002
-$
-$ FUNCTID=5002: LSTC 10인수 공식 시그니처
-$   exothermic_reaction_randle(time, temp, SOC, emdt, ocv, curr, volt, r0, vc, H_ex)
+$ ==================== EXOTHERMIC REACTION (열폭주) ====================
+$ (Step 3에서 활성화)
+$*EM_RANDLES_EXOTHERMIC_REACTION
+$         2      5002
 $
 $ ==================== TAB ISOPOTENTIAL (동전위면) ====================
 $
-$ 5 unit cells → 양극/음극 각 5개 = 10 ISOs
+$ 5 unit cells → CCP/CCN 각 5개 = 10 ISOs
+$ SETTYPE=2: Node Set (SET_NODE_GENERAL로 Part→Node 변환)
+$ RDLTYPE: 1=CCP(Al CC), 5=CCN(Cu CC) — R16 Vol III p.6-105
 $
 *EM_ISOPOTENTIAL
-$    isoId   setType     setId  randType
-         1         2         1         5
-$ UC0 Al CC (PID 1001), randType=5: Randles 양극 탭
+$    isoId   setType     setId  rdlType
+         1         2       201         1
+$ UC0 Al CC (PID 1001), rdlType=1: CCP 양극 집전체
 *EM_ISOPOTENTIAL
-         2         2         2         1
-$ UC0 Cu CC (PID 1005), randType=1: 음극 탭
+         2         2       202         5
+$ UC0 Cu CC (PID 1005), rdlType=5: CCN 음극 집전체
 *EM_ISOPOTENTIAL
-         3         2         3         5
+         3         2       203         1
 $ UC1 Al CC (PID 1011)
 *EM_ISOPOTENTIAL
-         4         2         4         1
+         4         2       204         5
 $ UC1 Cu CC (PID 1015)
 *EM_ISOPOTENTIAL
-         5         2         5         5
+         5         2       205         1
 $ UC2 Al CC (PID 1021)
 *EM_ISOPOTENTIAL
-         6         2         6         1
+         6         2       206         5
 $ UC2 Cu CC (PID 1025)
 *EM_ISOPOTENTIAL
-         7         2         7         5
+         7         2       207         1
 $ UC3 Al CC (PID 1031)
 *EM_ISOPOTENTIAL
-         8         2         8         1
+         8         2       208         5
 $ UC3 Cu CC (PID 1035)
 *EM_ISOPOTENTIAL
-         9         2         9         5
+         9         2       209         1
 $ UC4 Al CC (PID 1041)
 *EM_ISOPOTENTIAL
-        10         2        10         1
+        10         2       210         5
 $ UC4 Cu CC (PID 1045)
 $
 $ ==================== ISOPOTENTIAL CONNECTIONS ====================
@@ -226,40 +465,42 @@ $ --- 접지 ---
          6         3      10       0     0.0
 $ connType=3: 최종 음극탭 (ISO 10) → 접지 (기준 전위)
 $
-$ ==================== SET_PART for ISOPOTENTIAL ====================
+$ ==================== NODE SETS for ISOPOTENTIAL ====================
+$ SET_NODE_GENERAL + PART: Part→Node Set 변환
+$ SID 범위: 201~210 (메쉬 SET_NODE 1,2와 충돌 방지)
 $
-*SET_PART_LIST
+*SET_NODE_GENERAL
 $      SID
-         1
-$     PID1
-      1001
-*SET_PART_LIST
-         2
-      1005
-*SET_PART_LIST
-         3
-      1011
-*SET_PART_LIST
-         4
-      1015
-*SET_PART_LIST
-         5
-      1021
-*SET_PART_LIST
-         6
-      1025
-*SET_PART_LIST
-         7
-      1031
-*SET_PART_LIST
-         8
-      1035
-*SET_PART_LIST
-         9
-      1041
-*SET_PART_LIST
-        10
-      1045
+       201
+$   OPTION        E1
+PART,      1001
+*SET_NODE_GENERAL
+       202
+PART,      1005
+*SET_NODE_GENERAL
+       203
+PART,      1011
+*SET_NODE_GENERAL
+       204
+PART,      1015
+*SET_NODE_GENERAL
+       205
+PART,      1021
+*SET_NODE_GENERAL
+       206
+PART,      1025
+*SET_NODE_GENERAL
+       207
+PART,      1031
+*SET_NODE_GENERAL
+       208
+PART,      1035
+*SET_NODE_GENERAL
+       209
+PART,      1041
+*SET_NODE_GENERAL
+       210
+PART,      1045
 $
 $ ==================== EM OUTPUT ====================
 $
@@ -272,19 +513,15 @@ $
 $ ==================== EM DATABASE ====================
 $
 *EM_DATABASE_GLOBALENERGY
-$       DT
-     0.010
+$    OUTLV
+        10
 $
 *EM_DATABASE_PARTDATA
-$       DT
-     0.010
+$    OUTLV
+        10
 $
 *EM_DATABASE_CIRCUIT
-$       DT
-     0.010
-$
-*EM_DATABASE_ELOUT
-$       DT
-     0.100
+$    OUTLV
+        10
 $
 *END

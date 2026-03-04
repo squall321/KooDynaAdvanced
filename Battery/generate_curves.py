@@ -93,7 +93,7 @@ def _write_impactor_velocity(f: TextIO, velocity_mm_s: float,
 
 
 def _write_short_resistance_function(f: TextIO) -> None:
-    """FUNCTID 5001: ISC resistance (// comments inside function body)"""
+    """FUNCTID 5001: ISC resistance function (LS-DYNA C89 compatible)"""
     f.write("$ FUNCTID 5001: ISC resistance function\n")
     f.write("*DEFINE_FUNCTION\n")
     f.write("      5001\n")
@@ -106,34 +106,34 @@ def _write_short_resistance_function(f: TextIO) -> None:
                              float cond, float temp, float efstrain,
                              float ero)
 {
-    if (ero < 0.5) return -1.0;
+    float distCC, distSEP, R_base, R_short;
 
-    float distCC;
+    if (ero < 0.5) { return -1.0; }
+
     distCC = sqrt(
         pow((x_ccp - x_ccn), 2.0) +
         pow((y_ccp - y_ccn), 2.0) +
         pow((z_ccp - z_ccn), 2.0));
 
-    float distSEP;
     distSEP = sqrt(
         pow((x_sep - x_sen), 2.0) +
         pow((y_sep - y_sen), 2.0) +
         pow((z_sep - z_sen), 2.0));
 
-    float R_base;
-    if (distCC < 0.05)
-        R_base = 0.0001;     // Type 4: Al-Cu
-    else if (distCC < 0.15)
-        R_base = 0.001;      // Type 2/3: Al-An or Ca-Cu
-    else
-        R_base = 0.010;      // Type 1: Ca-An
+    if (distCC < 0.05) {
+        R_base = 0.0001;
+    } else if (distCC < 0.15) {
+        R_base = 0.001;
+    } else {
+        R_base = 0.010;
+    }
 
-    float R_short;
     R_short = R_base * exp(-0.002 * (temp - 298.15));
-    if (R_short < 0.00001) R_short = 0.00001;
+    if (R_short < 0.00001) { R_short = 0.00001; }
 
-    if (vmstress > 50.0)
+    if (vmstress > 50.0) {
         R_short = R_short * 50.0 / vmstress;
+    }
 
     return R_short;
 }
@@ -142,7 +142,7 @@ def _write_short_resistance_function(f: TextIO) -> None:
 
 
 def _write_exothermic_function(f: TextIO) -> None:
-    """FUNCTID 5002: thermal runaway Arrhenius chain"""
+    """FUNCTID 5002: thermal runaway 5-stage Arrhenius (LS-DYNA C89 compatible)"""
     f.write("$ FUNCTID 5002: exothermic reaction (5-stage Arrhenius)\n")
     f.write("*DEFINE_FUNCTION\n")
     f.write("      5002\n")
@@ -152,44 +152,36 @@ def _write_exothermic_function(f: TextIO) -> None:
                                  float volt, float r0,
                                  float vc, float H_ex)
 {
-    float H_max = 1.0e5;
-    if (H_ex > H_max) return 0.0;
+    float H_max, R_gas, total_q, q1, q2, q3, q4, q5;
 
-    float R_gas = 8.314;
-    float total_q = 0.0;
+    H_max = 1.0e5;
+    if (H_ex > H_max) { return 0.0; }
 
-    // Stage 1: SEI decomposition (353K+)
-    if (temp > 353.0)
-    {
-        float q1 = 1.67e15 * 257000.0 * exp(-135000.0 / (R_gas * temp));
+    R_gas = 8.314;
+    total_q = 0.0;
+
+    if (temp > 353.0) {
+        q1 = 1.67e15 * 257000.0 * exp(-135000.0 / (R_gas * temp));
         total_q = total_q + q1;
     }
 
-    // Stage 2: Anode-electrolyte (393K+)
-    if (temp > 393.0)
-    {
-        float q2 = SOC * 2.5e13 * 155000.0 * exp(-90000.0 / (R_gas * temp));
+    if (temp > 393.0) {
+        q2 = SOC * 2.5e13 * 155000.0 * exp(-90000.0 / (R_gas * temp));
         total_q = total_q + q2;
     }
 
-    // Stage 3: Electrolyte decomposition (423K+)
-    if (temp > 423.0)
-    {
-        float q3 = 5.0e12 * 180000.0 * exp(-110000.0 / (R_gas * temp));
+    if (temp > 423.0) {
+        q3 = 5.0e12 * 180000.0 * exp(-110000.0 / (R_gas * temp));
         total_q = total_q + q3;
     }
 
-    // Stage 4: Cathode decomposition (473K+)
-    if (temp > 473.0)
-    {
-        float q4 = (1.0 - SOC) * 6.67e13 * 115000.0 * exp(-100000.0 / (R_gas * temp));
+    if (temp > 473.0) {
+        q4 = (1.0 - SOC) * 6.67e13 * 115000.0 * exp(-100000.0 / (R_gas * temp));
         total_q = total_q + q4;
     }
 
-    // Stage 5: Binder decomposition (523K+)
-    if (temp > 523.0)
-    {
-        float q5 = 1.0e14 * 60000.0 * exp(-150000.0 / (R_gas * temp));
+    if (temp > 523.0) {
+        q5 = 1.0e14 * 60000.0 * exp(-150000.0 / (R_gas * temp));
         total_q = total_q + q5;
     }
 

@@ -261,6 +261,7 @@ class MeshGenerator:
         # 임시파일 핸들
         self._f_nodes = None
         self._f_shells = None
+        self._f_tshells = None
         self._f_solids = None
 
         # 세트 추적 (메모리 최소화)
@@ -270,8 +271,15 @@ class MeshGenerator:
         self.node_sets = {}
         self.part_sets = {}
         self.total_shells = 0
+        self.total_tshells = 0
         self.total_solids = 0
         self.total_nodes = 0
+
+        # TSHELL로 출력할 PID 집합 (cathode/anode/electrolyte)
+        self._tshell_pids: set = set()
+
+        # 임팩터 요소에 실제 사용된 노드 추적 (prescribed motion BC용)
+        self._impactor_written_nids: set = set()
 
     def add_node(self, x: float, y: float, z: float) -> int:
         nid = self.next_nid
@@ -292,18 +300,52 @@ class MeshGenerator:
         self.total_shells += 1
         return eid
 
+    @staticmethod
+    def _fix_wedge_face(face: list) -> list:
+        """Reorder degenerate hex face so duplicate pair is at positions 3-4.
+        LS-DYNA requires first 4 nodes unique; wedge: N3==N4, N7==N8."""
+        if len(set(face)) != 3:
+            return face
+        for i in range(4):
+            if face[i] == face[(i + 1) % 4]:
+                s = (i + 2) % 4
+                return [face[(s + k) % 4] for k in range(4)]
+        return face
+
     def add_solid(self, pid: int, nodes8: tuple) -> int:
-        # 퇴화 요소 방지: 고유 노드가 4개 미만이면 스킵
+        # 완전 퇴화 요소 (고유 노드 < 4): 스킵
         if len(set(nodes8)) < 4:
             return -1
+        ns = list(nodes8)
+        # Wedge 요소 노드 재배치: N1==N4 → N3==N4 (LS-DYNA Error 20222)
+        if len(set(ns[:4])) == 3:
+            ns[:4] = self._fix_wedge_face(ns[:4])
+        if len(set(ns[4:8])) == 3:
+            ns[4:8] = self._fix_wedge_face(ns[4:8])
+        # 재배치 후에도 first 4가 unique 아니면 스킵
+        if len(set(ns[:4])) < 4:
+            return -1
         eid = self.next_eid
-        ns = nodes8
-        self._f_solids.write(
-            f"{eid:>8d}{pid:>8d}"
-            f"{ns[0]:>8d}{ns[1]:>8d}{ns[2]:>8d}{ns[3]:>8d}"
-            f"{ns[4]:>8d}{ns[5]:>8d}{ns[6]:>8d}{ns[7]:>8d}\n")
+        line = (f"{eid:>8d}{pid:>8d}"
+                f"{ns[0]:>8d}{ns[1]:>8d}{ns[2]:>8d}{ns[3]:>8d}"
+                f"{ns[4]:>8d}{ns[5]:>8d}{ns[6]:>8d}{ns[7]:>8d}\n")
+        # 모든 배터리 레이어(SOLID): 전극/집전체/분리막 모두 ELEMENT_SOLID로 출력
+        # (EM_RANDLES_SOLID는 모든 레이어가 SOLID 요소이어야 함)
+        is_tshell = (pid in self._tshell_pids or
+                     (pid >= 1000 and pid % 10 in (LT_CATHODE, LT_ANODE)) or
+                     pid == PID_ELECTROLYTE)
+        # 참고: is_tshell=True인 경우에도 *ELEMENT_SOLID로 출력됨 (write_kfile 참조)
+        if is_tshell:
+            self._f_tshells.write(line)
+            self._tshell_pids.add(pid)
+            self.total_tshells += 1
+        else:
+            self._f_solids.write(line)
+            self.total_solids += 1
+            # 임팩터 요소 노드 추적 (전체 노드셋 BC용)
+            if pid == PID_IMPACTOR:
+                self._impactor_written_nids.update(ns)
         self.next_eid += 1
-        self.total_solids += 1
         return eid
 
     # ----------------------------------------------------------------
@@ -498,6 +540,10 @@ class MeshGenerator:
 
         prev_row = edge_row[ix_start: ix_end + 1]  # shape: (n_tab_cols+1,)
 
+        # 탭 PID를 part_ids에 등록 (PID_TAB_POS/NEG는 별도 PID)
+        if pid not in self.part_ids:
+            self.part_ids.append(pid)
+
         for row_idx in range(n_tab_rows):
             y = y_start + (row_idx + 1) * dy_tab * dy_dir
             new_nids = []
@@ -532,6 +578,8 @@ class MeshGenerator:
         z += d.t_pouch
 
         # ---- 전해질 버퍼 (하부) ----
+        # EM_RANDLES_SOLID: 전해질 버퍼는 젤리롤 회로의 일부가 아님.
+        # 버퍼-젤리롤 경계는 노드 공유 없이 TIED contact으로 연결.
         if d.t_electrolyte_buffer > 0:
             print(f"  전해질 버퍼 (하) z={z:.4f}~{z + d.t_electrolyte_buffer:.4f}")
             self.create_solid_coating(
@@ -539,59 +587,85 @@ class MeshGenerator:
             z += d.t_electrolyte_buffer
 
         # ---- 단위셀 적층 ----
-        _prev_top_grid = None
+        # EM_RANDLES_SOLID Remark 1: CCP→PEL→SEP→NEL→CCN이 merged nodes를 가져야 함.
+        # 각 UC 내부에서만 노드 공유 (5개 레이어 내부 4개 인터페이스).
+        # UC간 및 버퍼-젤리롤 경계는 TIED contact으로 처리 (독립 노드).
         separator_pids = []
         al_cc_pids = []
         cu_cc_pids = []
         cathode_pids = []
         anode_pids = []
 
+        # EM isopotential 외부면 노드 수집 (SID 201-210)
+        # em_randleSetCircArea2: CCP/CCN 이소포텐셜 세트는 오직 자유 외부면 노드만 포함해야 함
+        em_ccp_outer_grids = []  # Al CC 바닥면 (자유 외부면)
+        em_ccn_outer_grids = []  # Cu CC 상면 (자유 외부면)
+
         for uc in range(d.n_unit_cells):
             base_pid = 1000 + uc * 10
             print(f"  단위셀 {uc+1}/{d.n_unit_cells}, z={z:.4f}")
 
-            # 1) Al 집전체 (Shell) + 양극 탭
+            # Al CC (Solid): 새 바닥 노드 (UC간 경계 = 독립 노드)
             pid_al = base_pid + LT_AL_CC
-            al_grid = self.create_shell_layer(pid_al, z, d.t_al_cc,
-                                               f"SET_AL_CC_{uc}")
-            self._create_tab_strip(pid_al, z, al_grid, 'positive')
+            al_bot_grid = self.create_plane_nodes(z)
+            al_top_grid = self.create_plane_nodes(z + d.t_al_cc)
+            self.create_solid_layer_between(pid_al, al_bot_grid, al_top_grid)
+            # 양극 탭: Al CC 상면 노드에서 돌출
+            self._create_tab_strip(PID_TAB_POS, z + d.t_al_cc, al_top_grid, 'positive')
             al_cc_pids.append(pid_al)
+            em_ccp_outer_grids.append(al_bot_grid)  # 자유 외부면 수집
+            _uc_prev = al_top_grid
             z += d.t_al_cc
 
-            # 2) NMC 양극 코팅 (Solid) — 상면
+            # NMC 양극 코팅 (Solid): bot=al_top_grid (UC 내부 공유)
             pid_cath = base_pid + LT_CATHODE
-            z_cath_top = z + d.t_cathode
             _, _cath_top = self.create_solid_coating(
-                pid_cath, z, z_cath_top, d.n_elem_cathode_thick,
-                set_name=f"SET_CATHODE_{uc}")
+                pid_cath, z, z + d.t_cathode, d.n_elem_cathode_thick,
+                bot_grid=_uc_prev)
             cathode_pids.append(pid_cath)
-            z = z_cath_top
+            _uc_prev = _cath_top
+            z += d.t_cathode
 
-            # 3) PE 분리막 (Shell)
+            # PE 분리막 (Solid): bot=cath_top (UC 내부 공유)
             pid_sep = base_pid + LT_SEPARATOR
-            _sep_grid = self.create_shell_layer(pid_sep, z, d.t_separator,
-                                                f"SET_SEP_{uc}")
+            sep_top_grid = self.create_plane_nodes(z + d.t_separator)
+            self.create_solid_layer_between(pid_sep, _uc_prev, sep_top_grid)
             separator_pids.append(pid_sep)
+            _uc_prev = sep_top_grid
             z += d.t_separator
 
-            # 4) Graphite 음극 코팅 (Solid) — 하면
+            # Graphite 음극 코팅 (Solid): bot=sep_top (UC 내부 공유)
             pid_an = base_pid + LT_ANODE
-            z_an_top = z + d.t_anode
             _, _an_top = self.create_solid_coating(
-                pid_an, z, z_an_top, d.n_elem_anode_thick,
-                set_name=f"SET_ANODE_{uc}")
+                pid_an, z, z + d.t_anode, d.n_elem_anode_thick,
+                bot_grid=_uc_prev)
             anode_pids.append(pid_an)
-            z = z_an_top
+            _uc_prev = _an_top
+            z += d.t_anode
 
-            # 5) Cu 집전체 (Shell) + 음극 탭
+            # Cu 집전체 (Solid): bot=an_top (UC 내부 공유), 상면은 독립 노드
             pid_cu = base_pid + LT_CU_CC
-            cu_grid = self.create_shell_layer(pid_cu, z, d.t_cu_cc,
-                                               f"SET_CU_CC_{uc}")
-            self._create_tab_strip(pid_cu, z, cu_grid, 'negative')
+            cu_top_grid = self.create_plane_nodes(z + d.t_cu_cc)
+            self.create_solid_layer_between(pid_cu, _uc_prev, cu_top_grid)
+            # 음극 탭: Cu CC 상면 노드에서 돌출
+            self._create_tab_strip(PID_TAB_NEG, z + d.t_cu_cc, cu_top_grid, 'negative')
             cu_cc_pids.append(pid_cu)
+            em_ccn_outer_grids.append(cu_top_grid)  # 자유 외부면 수집
+            # cu_top_grid는 다음 UC로 전달하지 않음 (독립 노드 유지)
             z += d.t_cu_cc
 
-        # ---- 전해질 버퍼 (상부) ----
+        # EM isopotential 외부면 노드 세트 등록 (SID 201-210)
+        # 08_em_randles_tier-1.k의 SET_NODE_LIST SID 201-210과 매핑
+        for uc_idx, (ccp_grid, ccn_grid) in enumerate(
+                zip(em_ccp_outer_grids, em_ccn_outer_grids)):
+            ccp_sid = 201 + uc_idx * 2   # 201, 203, 205, 207, 209
+            ccn_sid = 202 + uc_idx * 2   # 202, 204, 206, 208, 210
+            self.node_sets[f"EM_CCP_OUTER_UC{uc_idx}"] = sorted(
+                int(n) for n in ccp_grid.flatten())
+            self.node_sets[f"EM_CCN_OUTER_UC{uc_idx}"] = sorted(
+                int(n) for n in ccn_grid.flatten())
+
+        # ---- 전해질 버퍼 (상부): 독립 노드 (마지막 Cu CC 상면과 분리) ----
         if d.t_electrolyte_buffer > 0:
             print(f"  전해질 버퍼 (상) z={z:.4f}~{z + d.t_electrolyte_buffer:.4f}")
             self.create_solid_coating(
@@ -636,8 +710,9 @@ class MeshGenerator:
 
         print(f"\n  총 노드: {self.total_nodes:,}")
         print(f"  총 셸 요소: {self.total_shells:,}")
+        print(f"  총 후판셸 요소: {self.total_tshells:,}")
         print(f"  총 솔리드 요소: {self.total_solids:,}")
-        print(f"  총 요소: {self.total_shells + self.total_solids:,}")
+        print(f"  총 요소: {self.total_shells + self.total_tshells + self.total_solids:,}")
         print(f"  총 두께: {z:.4f} mm")
 
     # ----------------------------------------------------------------
@@ -966,8 +1041,8 @@ class MeshGenerator:
 
         self.part_ids.append(pid)
 
-        # 임팩터 중심축 노드 세트 (처방운동 BC용)
-        self.node_sets["NSET_IMPACTOR_CENTER"] = list(center_nids)
+        # 임팩터 전체 노드 세트 (처방운동 BC용 — 모든 요소의 노드)
+        self.node_sets["NSET_IMPACTOR_ALL"] = sorted(self._impactor_written_nids)
 
     # ----------------------------------------------------------------
     # 네일 임팩터 (B12: 원추 팁 + 원통 축)
@@ -1075,7 +1150,7 @@ class MeshGenerator:
                     self.add_solid(pid, ns)
 
         self.part_ids.append(pid)
-        self.node_sets["NSET_IMPACTOR_CENTER"] = list(center_nids)
+        self.node_sets["NSET_IMPACTOR_ALL"] = sorted(self._impactor_written_nids)
 
     # ----------------------------------------------------------------
     # 경계 노드 세트
@@ -1100,61 +1175,73 @@ class MeshGenerator:
             self.node_sets["NSET_STACK_TOP"] = self._pouch_top_nids
 
     # ================================================================
-    # k-file 출력 (스트리밍 — 3 pass: nodes, shells, solids)
+    # k-file 출력 (스트리밍 — 4 pass: nodes, shells, tshells, solids)
     # ================================================================
     def write_kfile(self, filepath: str):
-        """k-file 출력: 3개 임시파일에 스트리밍 → 합치기"""
+        """k-file 출력: 4개 임시파일에 스트리밍 → 합치기"""
         import shutil
         print(f"\n  k-file 쓰기: {filepath}")
-        
+
         tmpdir = os.path.dirname(os.path.abspath(filepath))
         tmp_nodes = os.path.join(tmpdir, "_tmp_nodes.k")
         tmp_shells = os.path.join(tmpdir, "_tmp_shells.k")
+        tmp_tshells = os.path.join(tmpdir, "_tmp_tshells.k")
         tmp_solids = os.path.join(tmpdir, "_tmp_solids.k")
-        
+
         # 임시파일 열기
         self._f_nodes = open(tmp_nodes, 'w', encoding='utf-8')
         self._f_shells = open(tmp_shells, 'w', encoding='utf-8')
+        self._f_tshells = open(tmp_tshells, 'w', encoding='utf-8')
         self._f_solids = open(tmp_solids, 'w', encoding='utf-8')
-        
+
         # 리셋
         self.next_nid = 1
         self.next_eid = 1
         self.total_nodes = 0
         self.total_shells = 0
+        self.total_tshells = 0
         self.total_solids = 0
         self.part_ids = []
-        
-        # 빌드 (3개 파일에 동시 스트리밍)
+        self._tshell_pids = set()
+        self._impactor_written_nids = set()
+
+        # 빌드 (4개 파일에 동시 스트리밍)
         print("  메시 생성 중 (스트리밍)...")
         self.build_stacked_cell()
-        
+
         # 임시파일 닫기
         self._f_nodes.close()
         self._f_shells.close()
+        self._f_tshells.close()
         self._f_solids.close()
-        
+
         # 합치기
         print("  파일 합치기...")
         with open(filepath, 'w', encoding='utf-8') as fout:
             fout.write("*KEYWORD\n")
             fout.write("*TITLE\n")
             fout.write("Stacked Li-ion Pouch Cell Mesh - Auto Generated\n")
-            
+
             fout.write("$\n$ ============ NODES ============\n$\n")
             fout.write("*NODE\n")
             with open(tmp_nodes, 'r', encoding='utf-8') as fin:
                 shutil.copyfileobj(fin, fout)
-            
+
             fout.write("$\n$ ============ SHELL ELEMENTS ============\n$\n")
             fout.write("*ELEMENT_SHELL\n")
             with open(tmp_shells, 'r', encoding='utf-8') as fin:
                 shutil.copyfileobj(fin, fout)
-            
-            fout.write("$\n$ ============ SOLID ELEMENTS ============\n$\n")
+
+            fout.write("$\n$ ============ ELECTRODE SOLID ELEMENTS (8-node hex, for EM compat) ============\n$\n")
             fout.write("*ELEMENT_SOLID\n")
-            with open(tmp_solids, 'r', encoding='utf-8') as fin:
+            with open(tmp_tshells, 'r', encoding='utf-8') as fin:
                 shutil.copyfileobj(fin, fout)
+
+            if self.total_solids > 0:
+                fout.write("$\n$ ============ SOLID ELEMENTS ============\n$\n")
+                fout.write("*ELEMENT_SOLID\n")
+                with open(tmp_solids, 'r', encoding='utf-8') as fin:
+                    shutil.copyfileobj(fin, fout)
             
             self._write_parts(fout)
             self._write_sections(fout)
@@ -1163,7 +1250,7 @@ class MeshGenerator:
             fout.write("*END\n")
         
         # 임시파일 삭제
-        for tmp in [tmp_nodes, tmp_shells, tmp_solids]:
+        for tmp in [tmp_nodes, tmp_shells, tmp_tshells, tmp_solids]:
             os.remove(tmp)
         
         fsize = os.path.getsize(filepath) / (1024 * 1024)
@@ -1174,7 +1261,7 @@ class MeshGenerator:
         if pid == PID_IMPACTOR:
             return "Impactor_Solid"
         if pid == PID_ELECTROLYTE:
-            return "Electrolyte_Buffer_Solid"
+            return "Electrolyte_Buffer_TShell"
         if pid == PID_PCM_POS:
             return "PCM_Positive_Solid"
         if pid == PID_PCM_NEG:
@@ -1189,57 +1276,62 @@ class MeshGenerator:
             return "Tab_Positive_Al"
         if pid == PID_TAB_NEG:
             return "Tab_Negative_Cu"
-        # 적층별 파트 (1000+)
+        # 적층별 파트 (1000+) — 모두 SOLID
         uc_idx = (pid - 1000) // 10
         lt = pid % 10
         base_name = LAYER_NAMES.get(lt, f"Unknown_{lt}")
-        elem = "Shell" if lt in (LT_AL_CC, LT_CU_CC, LT_SEPARATOR) else "Solid"
-        return f"{base_name}_UC{uc_idx:02d}_{elem}"
+        return f"{base_name}_UC{uc_idx:02d}_Solid"
 
     def _write_parts(self, f: TextIO):
         """*PART 카드: PID, SECID, MID, EOSID, HGID, GRAV, ADPOPT, TMID"""
         f.write("$\n$ ============ PARTS ============\n$\n")
+        f.write(f"$ HGID=1: Battery internal (IHQ=6, QH=0.10)\n")
+        f.write(f"$ HGID=0: Separator(fully-integrated) / Impactor·PCM(rigid)\n$\n")
 
         for pid in sorted(self.part_ids):
-            sid, mid, tmid, eosid = self._get_part_properties(pid)
+            sid, mid, tmid, eosid, hgid = self._get_part_properties(pid)
             name = self._get_part_name(pid)
             f.write("*PART\n")
             f.write(f"{name}\n")
             eos_str = f"{eosid:>10d}" if eosid else f"{'':>10s}"
+            hg_str = f"{hgid:>10d}" if hgid else f"{'':>10s}"
             f.write(f"{pid:>10d}{sid:>10d}{mid:>10d}{eos_str}"
-                    f"{'':>10s}{'':>10s}{'':>10s}{tmid:>10d}\n")
+                    f"{hg_str}{'':>10s}{'':>10s}{tmid:>10d}\n")
 
-    def _get_part_properties(self, pid: int) -> Tuple[int, int, int, int]:
-        """PID → (SID, MID, TMID, EOSID) 매핑
+    def _get_part_properties(self, pid: int) -> Tuple[int, int, int, int, int]:
+        """PID → (SID, MID, TMID, EOSID, HGID) 매핑
         EOSID: 셸 요소는 EOS 불필요 → 0 (Al/Cu CC 포함)
-        솔리드 요소로 변경 시 EOS_GRUNEISEN 활성화 + EOSID 지정"""
+        HGID: 1 = TShell/Solid 배터리 파트 (IHQ=6, Belytschko-Bindeman)
+              2 = Shell 배터리 파트 (IHQ=4, Flanagan-Belytschko stiffness)
+              0 = 분리막(완전적분) / 임팩터·PCM(리지드) → 글로벌 기본값"""
         if pid == PID_IMPACTOR:
-            return SID_SOLID_IMPACTOR, MID_RIGID, 0, 0
+            return SID_SOLID_IMPACTOR, MID_RIGID, 107, 0, 0
         if pid == PID_ELECTROLYTE:
-            return SID_SOLID_1PT, MID_ELECTROLYTE, 108, 0
+            return SID_SOLID_1PT, MID_ELECTROLYTE, 108, 0, 1
         if pid in (PID_PCM_POS, PID_PCM_NEG):
-            return SID_SOLID_IMPACTOR, MID_PCM, 0, 0
+            return SID_SOLID_IMPACTOR, MID_PCM, 107, 0, 0
         if pid in (PID_POUCH_TOP, PID_POUCH_BOTTOM, PID_POUCH_SIDE):
-            return SID_SHELL_POUCH, MID_POUCH, 106, 0
+            return SID_SHELL_POUCH, MID_POUCH, 106, 0, 2
         if pid in (PID_TAB_POS,):
-            return SID_SHELL_BT, MID_AL, 101, 0
+            return SID_SHELL_BT, MID_AL, 101, 0, 2
         if pid in (PID_TAB_NEG,):
-            return SID_SHELL_CU_CC, MID_CU, 102, 0
+            return SID_SHELL_CU_CC, MID_CU, 102, 0, 2
 
         # 적층별 파트 (1000+)
+        # EM_RANDLES_SOLID: 모든 5개 레이어가 SOLID (merged nodes 요구사항)
         layer_type = pid % 10
         if layer_type == LT_AL_CC:
-            return SID_SHELL_BT, MID_AL, 101, 0
+            return SID_SOLID_1PT, MID_AL, 101, 11, 1  # EOSID=11 (Al linear EOS)
         elif layer_type == LT_CATHODE:
-            return SID_SOLID_1PT, MID_NMC, 103, 0
+            return SID_SOLID_1PT, MID_NMC, 103, 0, 1
         elif layer_type == LT_SEPARATOR:
-            return SID_SHELL_FULL, MID_SEPARATOR, 105, 0
+            return SID_SOLID_1PT, MID_SEPARATOR, 105, 0, 1
         elif layer_type == LT_ANODE:
-            return SID_SOLID_1PT, MID_GRAPHITE, 104, 0
+            return SID_SOLID_1PT, MID_GRAPHITE, 104, 0, 1
         elif layer_type == LT_CU_CC:
-            return SID_SHELL_CU_CC, MID_CU, 102, 0
+            return SID_SOLID_1PT, MID_CU, 102, 12, 1  # EOSID=12 (Cu linear EOS)
         else:
-            return SID_SHELL_BT, MID_AL, 0, 0
+            return SID_SHELL_BT, MID_AL, 0, 0, 2
 
     def _write_sections(self, f: TextIO):
         """섹션 정의"""
@@ -1263,7 +1355,7 @@ class MeshGenerator:
         f.write(f"{d.t_separator:>10.4f}{d.t_separator:>10.4f}"
                 f"{d.t_separator:>10.4f}{d.t_separator:>10.4f}\n")
 
-        # Solid 1-point (ELFORM=1) — 전극 코팅
+        # Solid (ELFORM=1 constant stress) — 전극 코팅, 전해질 (EM solver와 호환)
         f.write("*SECTION_SOLID\n")
         f.write(f"${'SID':>9s}{'ELFORM':>10s}\n")
         f.write(f"{SID_SOLID_1PT:>10d}{1:>10d}\n")
@@ -1287,15 +1379,52 @@ class MeshGenerator:
         f.write("*SECTION_SOLID\n")
         f.write(f"{SID_SOLID_IMPACTOR:>10d}{1:>10d}\n")
 
+        # Per-part hourglass control (배터리 내부 전용)
+        f.write("$\n$ ============ HOURGLASS (per-part) ============\n$\n")
+        f.write("$ HGID=1: TShell/Solid — Belytschko-Bindeman stiffness (IHQ=6)\n")
+        f.write("*HOURGLASS\n")
+        f.write("$     HGID       IHQ        QH        IBQ        Q1        Q2    QB/VDC        QW\n")
+        f.write(f"{1:>10d}{6:>10d}{0.10:>10.2f}\n")
+        f.write("$ HGID=2: Shell — Flanagan-Belytschko stiffness (IHQ=4)\n")
+        f.write("*HOURGLASS\n")
+        f.write("$     HGID       IHQ        QH        IBQ        Q1        Q2    QB/VDC        QW\n")
+        f.write(f"{2:>10d}{4:>10d}{0.10:>10.2f}\n")
+
+        # Equation of State for Al CC and Cu CC (MAT_015/Johnson-Cook needs EOS for SOLID)
+        # Linear polynomial: p = C1*mu where mu = rho/rho0 - 1, C1 = bulk modulus K
+        # Card 1: EOSID C0 C1 C2 C3 C4 C5 E0  (8 fields)
+        # Card 2: V0                            (1 field)
+        f.write("$\n$ ============ EQUATION OF STATE ============\n$\n")
+        f.write("$ EOSID=11: Al (K=68627 MPa, from E=70000 PR=0.33)\n")
+        f.write("*EOS_LINEAR_POLYNOMIAL\n")
+        f.write("$     EOSID        C0        C1        C2        C3        C4        C5        E0\n")
+        f.write(f"{11:>10d}{0.0:>10.1f}{68627.0:>10.1f}{0.0:>10.1f}"
+                f"{0.0:>10.1f}{0.0:>10.1f}{0.0:>10.1f}{0.0:>10.1f}\n")
+        f.write("$        V0\n")
+        f.write(f"{1.0:>10.1f}\n")
+        f.write("$ EOSID=12: Cu (K=125000 MPa, from E=120000 PR=0.34)\n")
+        f.write("*EOS_LINEAR_POLYNOMIAL\n")
+        f.write(f"{12:>10d}{0.0:>10.1f}{125000.0:>10.1f}{0.0:>10.1f}"
+                f"{0.0:>10.1f}{0.0:>10.1f}{0.0:>10.1f}{0.0:>10.1f}\n")
+        f.write(f"{1.0:>10.1f}\n")
+
     def _write_node_sets(self, f: TextIO):
         """노드 세트 출력 — 고정 SID 매핑 (06_boundary_loads.k 호환)"""
         f.write("$\n$ ============ NODE SETS ============\n$\n")
-        # 고정 SID 매핑: boundary_loads.k가 참조하는 순서
+        # 고정 SID 매핑: boundary_loads.k + EM randles가 참조하는 SID
+        # EM 외부면 세트 SID 201-210: 08_em_randles_tier-1.k EM_ISOPOTENTIAL 참조
+        # (PART 기반 SET_NODE_GENERAL 대신 자유 외부면 노드만 포함)
+        d = self.d
         FIXED_SID = {
             "NSET_FIX_BOTTOM_EDGE": 1,
-            "NSET_IMPACTOR_CENTER": 2,
+            "NSET_IMPACTOR_ALL": 2,
             "NSET_STACK_TOP":       1002,
         }
+        for uc_idx in range(d.n_unit_cells):
+            ccp_sid = 201 + uc_idx * 2
+            ccn_sid = 202 + uc_idx * 2
+            FIXED_SID[f"EM_CCP_OUTER_UC{uc_idx}"] = ccp_sid
+            FIXED_SID[f"EM_CCN_OUTER_UC{uc_idx}"] = ccn_sid
         next_sid = max(FIXED_SID.values()) + 1
         # 고정 SID 세트 먼저 출력 (SID 순서)
         for name in sorted(FIXED_SID, key=lambda n: FIXED_SID[n]):

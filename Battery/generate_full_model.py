@@ -123,9 +123,13 @@ def generate_full_model(
     tiers: List[float],
     phases: List[int],
     config_path: str = "battery_config.yaml",
+    em_step: int = 3,
     log: logging.Logger | None = None,
 ) -> Dict[str, Any]:
     """전체 모델을 한번에 생성.
+
+    Args:
+        em_step: EM 단계 (1=Randles만, 2=+ISC, 3=전체). generate_em_randles.py에 전달.
 
     Returns:
         결과 요약 dict
@@ -231,15 +235,28 @@ def generate_full_model(
                 else:
                     results["fail"].append(f"contacts_{mt}_phase{ph}")
 
-            # EM Randles (stacked only, tier-dependent)
+            # EM Randles (stacked: config+tier, wound: --model-type wound)
             if mt == "stacked":
-                ok = _call_generator("generate_em_randles.py", [
+                em_args = [
                     "--config", config_path, "--tier", tier_str,
-                ], log)
+                    "--model-type", "stacked",
+                ]
+                if em_step != 3:
+                    em_args += ["--em-step", str(em_step)]
+                ok = _call_generator("generate_em_randles.py", em_args, log)
                 if ok:
-                    results["ok"].append(f"em_randles_tier{tier_str}")
+                    results["ok"].append(f"em_randles_stacked_tier{tier_str}")
                 else:
-                    results["fail"].append(f"em_randles_tier{tier_str}")
+                    results["fail"].append(f"em_randles_stacked_tier{tier_str}")
+            else:  # wound
+                em_args = ["--model-type", "wound"]
+                if em_step != 3:
+                    em_args += ["--em-step", str(em_step)]
+                ok = _call_generator("generate_em_randles.py", em_args, log)
+                if ok:
+                    results["ok"].append("em_randles_wound")
+                else:
+                    results["fail"].append("em_randles_wound")
 
     # ── Step 7: Main files ──
     log.info("\n[7/9] Main Files")
@@ -437,6 +454,8 @@ def main():
                         help="셀 용량 Ah (YAML 오버라이드, n_cells 자동 계산)")
     parser.add_argument("--areal-capacity", type=float, default=3.5,
                         help="전극 면적당 용량 mAh/cm^2 (기본: 3.5)")
+    parser.add_argument("--em-step", type=int, default=3, choices=[1, 2, 3],
+                        help="EM 단계 (1=Randles만, 2=+ISC, 3=전체, 기본: 3)")
 
     args = parser.parse_args()
 
@@ -471,6 +490,7 @@ def main():
         tiers=tiers,
         phases=args.phase,
         config_path=args.config,
+        em_step=args.em_step,
         log=log,
     )
 

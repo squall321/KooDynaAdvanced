@@ -39,7 +39,7 @@ _SCENARIO_TITLES = {
 
 # Phase-specific defaults
 _PHASE_PARAMS = {
-    1: dict(endtim="5.0E-03", sotefp=0, dt2ms="-1.00E-05", erode=0, endmas=0.10),
+    1: dict(endtim="5.0E-03", sotefp=0, dt2ms="       0.0", erode=1, endmas=0.10),
     2: dict(endtim="1.0E-02", sotefp=1, dt2ms="-1.00E-05", erode=1, endmas=0.10),
     3: dict(endtim="60.00",   sotefp=1, dt2ms="-1.00E-06", erode=1, endmas=0.0),
 }
@@ -74,22 +74,25 @@ def _write_timestep(f, dt2ms: str, erode: int) -> None:
     f.write("$ ==================== Timestep ====================\n$\n")
     f.write("*CONTROL_TIMESTEP\n")
     f.write("$   DTINIT    TSSFAC      ISDO    TSLIMT     DT2MS     LCTM     ERODE     MS1ST\n")
-    f.write(f"       0.0      0.90         0       0.0{dt2ms:>10s}         0         {erode}         0\n")
+    f.write(f"       0.0      0.90         0  1.0E-08{dt2ms:>10s}         0         {erode}         0\n")
     f.write("$\n")
 
 
 def _write_common_controls(f) -> None:
     """Hourglass, shell, solid, contact, energy, bulk viscosity."""
-    f.write("$ ==================== Hourglass ====================\n$\n")
+    f.write("$ ==================== Hourglass ====================\n")
+    f.write("$ Global default only -- battery-specific HG via *HOURGLASS + HGID in mesh\n$\n")
     f.write("*CONTROL_HOURGLASS\n")
     f.write("$      IHQ        QH\n")
-    f.write("         5      0.05\n")
+    f.write("         1      0.10\n")
     f.write("$\n")
 
     f.write("$ ==================== Shell ====================\n$\n")
     f.write("*CONTROL_SHELL\n")
     f.write("$   WRPANG     ESORT    IRNXX    ISTUPD    THEORY       BWC     MITER      PROJ\n")
     f.write("     20.0         1        -1         1         2         2         1         0\n")
+    f.write("$ ROTASCL    INTGRD    LAMSHT    CSTYP6    THSHEL\n")
+    f.write("       1.0         0         0         1         1\n")
     f.write("$\n")
 
     f.write("$ ==================== Solid ====================\n$\n")
@@ -122,17 +125,12 @@ def _write_common_controls(f) -> None:
 def _write_thermal_solver(f) -> None:
     f.write("$ ==================== Thermal Solver ====================\n$\n")
     f.write("*CONTROL_THERMAL_SOLVER\n")
-    f.write("$     APTS    SOLVER       GPT      ETEFP     FWORK\n")
-    f.write("         1        12         0         0      0.90\n")
-    f.write("$\n")
-
+    f.write("         1         1        12 1.0000E-4         0       1.0      0.90       0.0\n")
+    f.write("         0       5001.0000E-10 1.0000E-4       1.0                           1.0\n")
     f.write("*CONTROL_THERMAL_TIMESTEP\n")
-    f.write("$       TS       TIP       ITS      TMIN      TMAX       DTA       LCC      LCTM\n")
-    f.write("       0.0       0.5       0.0   1.0E-06      0.01       0.0         0         0\n")
-    f.write("$\n")
-
+    f.write("$#      ts       tip       its      tmin      tmax     dtemp      tscp      lcts\n")
+    f.write("         0       0.5  1.00E-05       0.0       0.0       1.0       0.5         0\n")
     f.write("*CONTROL_THERMAL_NONLINEAR\n")
-    f.write("$    REFMAX     TOLRF       DCP\n")
     f.write("        50   1.0E-04       0.5\n")
     f.write("$\n")
 
@@ -210,7 +208,10 @@ def generate_control(config: Dict[str, Any], phase: int = 3,
 
         if phase >= 2:
             _write_thermal_solver(f)
-            _write_refine_solid(f)
+        # REFINE_SOLID: LS-DYNA Error 11087 — thermal solver와 비호환
+        # Phase 3는 thermal solver가 필수이므로 REFINE_SOLID 비활성
+        # if phase >= 3:
+        #     _write_refine_solid(f)
 
         f.write("*END\n")
 

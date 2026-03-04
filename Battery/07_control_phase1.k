@@ -19,13 +19,14 @@ $ ==================== Timestep ====================
 $
 *CONTROL_TIMESTEP
 $   DTINIT    TSSFAC      ISDO    TSLIMT     DT2MS     LCTM     ERODE     MS1ST
-       0.0      0.90         0       0.0 -1.00E-05         0         0         0
+       0.0      0.90         0  1.0E-08       0.0         0         1         0
 $
 $ ==================== Hourglass ====================
+$ Global default only — battery-specific HG via *HOURGLASS + HGID in mesh
 $
 *CONTROL_HOURGLASS
 $      IHQ        QH
-         5      0.05
+         1      0.10
 $
 $ ==================== Shell ====================
 $

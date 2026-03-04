@@ -69,9 +69,12 @@ def write_impactor_contact(f, fs: float = 0.30, fd: float = 0.20) -> None:
     f.write("$     SSID      MSID     SSTYP     MSTYP    SBOXID    MBOXID       SPR       MPR\n")
     f.write(f"       {PSET_IMPACTOR}       {PSET_POUCH}         2         2         0         0         1         1\n")
     f.write("$       FS        FD        DC        VC       VDC    PENCHK        BT        DT\n")
-    f.write(f"      {fs:4.2f}      {fd:4.2f}       0.0       0.0       0.0         2       0.0  1.0E+20\n")
+    f.write(f"      {fs:4.2f}      {fd:4.2f}       0.0       0.0      40.0         2       0.0  1.0E+20\n")
     f.write("$      SFS       SFM       SST       MST      SFST      SFMT       FSF       VSF\n")
     f.write("      1.00      1.00       0.0       0.0       0.0       0.0       0.0       0.0\n")
+    f.write("$ Optional Card A: SOFT=0 penalty\n")
+    f.write("$     SOFT    SOFSCL    LCIDAB    MAXPAR     SBOPT     DEPTH     BSORT    FRCFRQ\n")
+    f.write("         0       1.0         0     1.375         3         5         0         1\n")
 
 
 def write_self_contact(f, fs: float = 0.20, fd: float = 0.15) -> None:
@@ -83,12 +86,12 @@ def write_self_contact(f, fs: float = 0.20, fd: float = 0.15) -> None:
     f.write("$     SSID      MSID     SSTYP     MSTYP    SBOXID    MBOXID       SPR       MPR\n")
     f.write(f"       {PSET_ALL_CELL}         0         2         0         0         0         0         0\n")
     f.write("$       FS        FD        DC        VC       VDC    PENCHK        BT        DT\n")
-    f.write(f"      {fs:4.2f}      {fd:4.2f}       0.0       0.0       0.0         2       0.0  1.0E+20\n")
+    f.write(f"      {fs:4.2f}      {fd:4.2f}       0.0       0.0      40.0         2       0.0  1.0E+20\n")
     f.write("$      SFS       SFM       SST       MST      SFST      SFMT       FSF       VSF\n")
     f.write("      1.00      1.00       0.0       0.0       0.0       0.0       0.0       0.0\n")
-    f.write("$ Optional Card A:\n")
+    f.write("$ Optional Card A: SOFT=0 penalty (avoid segment-timestep issue with eroded TSHELL)\n")
     f.write("$     SOFT    SOFSCL    LCIDAB    MAXPAR     SBOPT     DEPTH     BSORT    FRCFRQ\n")
-    f.write("         2       0.1         0     1.375         4         5         0         1\n")
+    f.write("         0       0.1         0     1.375         3         5         0         1\n")
 
 
 def write_tied_thermal(f, cid: int, title: str, ssid: int, msid: int, k_val: float) -> None:
@@ -513,8 +516,9 @@ def main():
                                       suffix=args.output_suffix, config=config)
 
         if args.type in ("wound", "both"):
+            # Wound contacts는 tier에 무관 (PID 고정) → suffix 없이 생성
             generate_wound_contacts(outdir, phases, nail=args.nail,
-                                    suffix=args.output_suffix, config=config)
+                                    suffix="", config=config)
 
         log.info("완료!")
 

@@ -102,9 +102,11 @@ class SID:
     """Section ID 체계"""
     SHELL_BT       = 1   # Belytschko-Tsay (Al CC)
     SHELL_FULL     = 2   # 완전적분 (분리막)
-    SOLID_1PT      = 3   # 정축소 솔리드
-    SOLID_IMPACTOR = 4   # 강체 솔리드 (임팩터)
-    SOLID_CORE     = 5   # 와인딩 맨드릴 코어
+    TSHELL         = 3   # (legacy) was Thick shell, now Solid for EM compat
+    SOLID_1PT      = 3   # 8-node hex solid (전극 코팅, 전해질) — EM solver 호환
+    SOLID_IMPACTOR = 4   # 솔리드 (임팩터/PCM)
+    TSHELL_CORE    = 5   # Thick shell (와인딩 코어/전해질)
+    SOLID_CORE     = 5   # (하위호환) alias for TSHELL_CORE
     SHELL_POUCH    = 6   # 파우치 셸 (T=t_pouch)
     SHELL_CU_CC    = 7   # Cu 집전체 셸 (T=t_cu_cc)
 

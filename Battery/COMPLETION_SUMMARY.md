@@ -215,16 +215,20 @@ PID 100: 임팩터       PID 200: 맨드릴 코어 (와인딩형만)
 
 ### 3.4 EM Randles 회로
 
-**적층형 (`08_em_randles.k`):**
+**적층형 (`08_em_randles_tier-1.k`, tier -1 기준):**
 
-- UC별 개별 `EM_RANDLES_SOLID` → 15개 회로
-- 각 UC의 CCPPART/CCNPART/SEPPART/PELPART/NELPART 지정
-- Q=2600 mAh, SOCINIT=0.5, R0=30~35 mΩ
+- 5 UC × 1개 `EM_RANDLES_SOLID` = **5개 회로 정의**
+- 실제 검출된 내부 회로: **5UC × 435 circuits = 2175 circuits** (All-SOLID mesh)
+- Q=2.6 Ah, SOCINIT=0.5, R0/R1/C1 TABLE (SOC×온도 의존)
+- Isopotential: SETTYPE=2(Node Set), SID 201~210 (Al CC 하단 / Cu CC 상단 자유 외부면만)
 
 **와인딩형 (`08_em_randles_wound.k`):**
 
 - 단일 `EM_RANDLES_SOLID` (PID 2001~2005)
-- 동일한 전기화학 파라미터
+- 실제 검출된 내부 회로: **1UC × 4011 circuits** (나선 구조, 회로 수 훨씬 많음)
+- Isopotential: SID 201 (Al CC 내부면, 코어 쪽) / SID 202 (Cu CC 외부면, 파우치 쪽)
+
+**⚠️ All-SOLID 필수**: TSHELL 요소가 하나라도 있으면 EM solver 실패 (0 circuits 또는 segfault)
 
 ---
 
@@ -404,13 +408,18 @@ mpirun -np 16 ls-dyna i=01_main_phase3_wound.k
 
 ---
 
-## 9. 미완료 / 향후 작업
+## 9. 완료된 검증 / 향후 작업
 
-### 필수 확인 사항
+### 검증 완료 사항
 
-1. **USER FUNCTION 연결**: `EM_RANDLES_SHORT` (FUNCTID=5001) 및 `EM_RANDLES_EXOTHERMIC_REACTION` (FUNCTID=5002)의 `*DEFINE_FUNCTION` 정의가 `10_define_curves.k`에 포함되어야 함
-2. **OCV vs SOC 커브**: 로드커브 2001 (SOCTOU), 2002 (dU/dT), 2003 (외부 전류) — 실제 셀 데이터 기반 교정 필요
-3. **재료 파라미터 교정**: Crushable foam 응력-변형률, 분리막 파괴 변형률 등 실험 데이터 기반 보정
+1. ~~**USER FUNCTION 연결**~~: ✅ `FUNCTID=5001` (20인수 LSTC 공식 시그니처) 및 `FUNCTID=5002` (10인수 확장판)가 `10_define_curves.k`에 올바르게 정의됨. 반환값 규약(`-1.0`=단락없음)도 LSTC 표준 준수
+2. ~~**EM_MAT_001 전극 mtype**~~: ✅ NMC/Graphite(MID 3,4)를 mtype=1(비도체, Randles 전용)로 수정 완료. CC(MID 1,2)는 mtype=2(도체)
+3. ~~**EM_ISOPOTENTIAL/CONNECT**~~: ✅ Stacked(10 ISOPOTENTIAL + 6 CONNECT) 및 Wound(2 ISOPOTENTIAL + 2 CONNECT) 모두 추가 완료. randType 적용
+
+### 실험 데이터 기반 교정 (향후)
+
+1. **OCV vs SOC 커브**: 로드커브 2001 (SOCTOU), 2002 (dU/dT), 2003 (외부 전류) — 실제 셀 데이터 기반 교정 필요
+2. **재료 파라미터 교정**: Crushable foam 응력-변형률, 분리막 파괴 변형률 등 실험 데이터 기반 보정
 
 ### 선택 사항
 
@@ -683,9 +692,9 @@ Tier-1 메시(5 UC)와 전체 k-file 간 정합성 검증. UC 수 불일치, 미
 
 ---
 
-## 최종 상태: 7차 YAML 통합 완료 (2026-02-17)
+## 최종 상태: Phase 3 EM_RANDLES 검증 완료 (2026-03-04)
 
-- **총 수정 건수**: 32건 (1-4차) + 5건 (5차) + 3건 (6차) + 15건 (7차) = **55건**
+- **총 수정 건수**: 55건 (1~7차) + 8건 (8차 Phase 3 EM 호환) = **63건**
 - **단계별 분류**:
   - 1차: 초기 구조/재료 검토 (수정 #1~#16)
   - 2차: 세밀 정합성 감사 (수정 #17~#24)
@@ -693,11 +702,29 @@ Tier-1 메시(5 UC)와 전체 k-file 간 정합성 검증. UC 수 불일치, 미
   - 4차: Phase 분리 및 수렴성 (수정 #30~#32)
   - 5차: Tier-1 정합성 (수정 #33~#37)
   - 6차: 티어 자동화 개선 (수정 #38~#40)
-  - 7차: YAML 설정 통합 + 하드코딩 완전 제거 + 실행 도구 (수정 #41~#55)
+  - 7차: YAML 설정 통합 (수정 #41~#55)
+  - **8차: Phase 3 EM_RANDLES 실행 검증 (수정 #56~#63)**
 - **Critical issues**: 0건
-- **완료 시점**: LS-DYNA 관점에서 **즉시 실행 가능** (모든 티어)
+- **완료 시점**: Phase 3 tier -1 **Normal termination + 실제 회로 계산 확인**
 - **자동화 수준**: YAML 기반 One-command 생성 (stacked/wound 모두 통합)
 - **추적성**: 모든 파라미터 변경 이유/출처가 YAML 주석에 기록됨
+
+### 8차 수정 이력: Phase 3 EM_RANDLES 실행 검증 (2026-03-04)
+
+| # | 파일 | 수정 내용 | 근거 |
+|---|------|----------|------|
+| 56 | generate_mesh_stacked.py | Al CC, Sep, Cu CC: SECTION_SHELL/TSHELL → SECTION_SOLID(ELFORM=1) | EM solver + TSHELL = segfault. EM_RANDLES_SOLID는 전 5개 층 SOLID 필수 |
+| 57 | generate_mesh_stacked.py | 5개 층 전체 intra-UC 노드 병합 (merged nodes) | em_BP_fillRandleCircuit이 노드 연결성을 추적하여 회로 검출 |
+| 58 | generate_mesh_stacked.py | Al CC 하단 / Cu CC 상단 UC 경계 독립 노드 | em_randleSetCircArea2: CCP/CCN isopotential 세트는 자유 외부면 노드만 허용 |
+| 59 | generate_mesh_stacked.py | EOS_LINEAR_POLYNOMIAL 추가 (Al EOSID=11, Cu EOSID=12) | MAT_015(Johnson-Cook)를 SOLID 요소에 사용 시 EOS 필수. 2-card 포맷 |
+| 60 | generate_mesh_stacked.py | EM 외부면 node sets SID 201-210 직접 작성 | SET_NODE_GENERAL PART= 사용 시 양면 노드 포함 → em_randleSetCircArea2 에러 |
+| 61 | generate_mesh_wound.py | 동일 변경사항 (wound: _al_inner_grid→SID201, _cu_outer_grid→SID202) | wound EM_RANDLES_SOLID 동일 요건 |
+| 62 | generate_em_randles.py | SET_NODE_GENERAL PART= 블록 제거 → 주석으로 교체 | mesh 생성기가 node sets 직접 작성하므로 중복 불필요 |
+| 63 | generate_em_randles.py | --em-step, --model-type (stacked/wound) 인자 추가 | 단계별 검증 (Step1: Randles only, Step2: +ISC, Step3: +Exothermic) |
+
+**검증 결과 (tier -1):**
+- Stacked (case_09, job 611): **Normal termination**, 5UC × **435 circuits**, 5분 48초
+- Wound (case_10, job 619): **Normal termination**, 1UC × **4011 circuits**, ~10분
 
 ### YAML 기반 워크플로우 사용법
 

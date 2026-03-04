@@ -19,19 +19,22 @@ $ ==================== Timestep ====================
 $
 *CONTROL_TIMESTEP
 $   DTINIT    TSSFAC      ISDO    TSLIMT     DT2MS     LCTM     ERODE     MS1ST
-       0.0      0.90         0       0.0 -1.00E-06         0         1         0
+       0.0      0.90         0  1.0E-08 -1.00E-06         0         1         0
 $
 $ ==================== Hourglass ====================
+$ Global default only -- battery-specific HG via *HOURGLASS + HGID in mesh
 $
 *CONTROL_HOURGLASS
 $      IHQ        QH
-         5      0.05
+         1      0.10
 $
 $ ==================== Shell ====================
 $
 *CONTROL_SHELL
 $   WRPANG     ESORT    IRNXX    ISTUPD    THEORY       BWC     MITER      PROJ
      20.0         1        -1         1         2         2         1         0
+$ ROTASCL    INTGRD    LAMSHT    CSTYP6    THSHEL
+       1.0         0         0         1         1
 $
 $ ==================== Solid ====================
 $
@@ -62,25 +65,12 @@ $
 $ ==================== Thermal Solver ====================
 $
 *CONTROL_THERMAL_SOLVER
-$     APTS    SOLVER       GPT      ETEFP     FWORK
-         1        12         0         0      0.90
-$
+         1         1        12 1.0000E-4         0       1.0      0.90       0.0
+         0       5001.0000E-10 1.0000E-4       1.0                           1.0
 *CONTROL_THERMAL_TIMESTEP
-$       TS       TIP       ITS      TMIN      TMAX       DTA       LCC      LCTM
-       0.0       0.5       0.0   1.0E-06      0.01       0.0         0         0
-$
+$#      ts       tip       its      tmin      tmax     dtemp      tscp      lcts
+         0       0.5  1.00E-05       0.0       0.0       1.0       0.5         0
 *CONTROL_THERMAL_NONLINEAR
-$    REFMAX     TOLRF       DCP
         50   1.0E-04       0.5
-$
-$ ==================== Solid Refinement ====================
-$
-*CONTROL_REFINE_SOLID
-$       ID      TYPE      NLVL      IBOX    IELOUT
-       102         0         2         0         0
-$   NTOTRF    NCYCRF    CRITRF     VALRF     BEGRF     ENDRF     LAYRF
-      5000     0.001         3      25.0       0.0  1.0E+20         1
-$    MAXRM    NCYCRM    CRITRM     VALRM     BEGRM     ENDRM
-      1000     0.005         3      10.0      -0.10  1.0E+20
 $
 *END

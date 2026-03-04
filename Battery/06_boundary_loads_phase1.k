@@ -12,8 +12,10 @@ $     NSID       CID      DOFX      DOFY      DOFZ     DOFRX     DOFRY     DOFRZ
 $
 $ ==================== Impactor ====================
 $
-*BOUNDARY_PRESCRIBED_MOTION_SET
-$     NSID       DOF       VAD      LCID        SF       VID     DEATH     BIRTH
-         2         1         0      3001      -1.0         0  1.0E+28       0.0
+*INITIAL_VELOCITY
+$     NSID    NSIDEX     BOXID    IRIGID
+         2         0         0         0
+$       VX        VY        VZ       VRX       VRY       VRZ
+   -1000.0       0.0       0.0       0.0       0.0       0.0
 $
 *END

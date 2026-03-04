@@ -18,9 +18,12 @@ $      CID     TITLE
 $     SSID      MSID     SSTYP     MSTYP    SBOXID    MBOXID       SPR       MPR
        100       101         2         2         0         0         1         1
 $       FS        FD        DC        VC       VDC    PENCHK        BT        DT
-      0.30      0.20       0.0       0.0       0.0         2       0.0  1.0E+20
+      0.30      0.20       0.0       0.0      40.0         2       0.0  1.0E+20
 $      SFS       SFM       SST       MST      SFST      SFMT       FSF       VSF
       1.00      1.00       0.0       0.0       0.0       0.0       0.0       0.0
+$ Optional Card A: SOFT=0 penalty
+$     SOFT    SOFSCL    LCIDAB    MAXPAR     SBOPT     DEPTH     BSORT    FRCFRQ
+         0       1.0         0     1.375         3         5         0         1
 $
 $ ============================================================
 $ 2. 셀 내부 자기접촉
@@ -32,12 +35,12 @@ $      CID     TITLE
 $     SSID      MSID     SSTYP     MSTYP    SBOXID    MBOXID       SPR       MPR
        102         0         2         0         0         0         0         0
 $       FS        FD        DC        VC       VDC    PENCHK        BT        DT
-      0.20      0.15       0.0       0.0       0.0         2       0.0  1.0E+20
+      0.20      0.15       0.0       0.0      40.0         2       0.0  1.0E+20
 $      SFS       SFM       SST       MST      SFST      SFMT       FSF       VSF
       1.00      1.00       0.0       0.0       0.0       0.0       0.0       0.0
-$ Optional Card A:
+$ Optional Card A: SOFT=0 penalty (avoid segment-timestep issue with eroded TSHELL)
 $     SOFT    SOFSCL    LCIDAB    MAXPAR     SBOPT     DEPTH     BSORT    FRCFRQ
-         2       0.1         0     1.375         4         5         0         1
+         0       0.1         0     1.375         3         5         0         1
 $
 $ ============================================================
 $ 층간 TIED THERMAL 접합 (5 단위셀)

@@ -57,13 +57,8 @@ def _write_mat_johnson_cook(f: TextIO, mid: int, m: Dict[str, Any], name: str) -
     else:
         CP = cp_yaml
 
-    # Damage params (defaults for Al / Cu)
-    d = jc.get("damage", {})
-    D1 = d.get("D1", 0.13)
-    D2 = d.get("D2", 0.13)
-    D3 = d.get("D3", -1.50)
-    D4 = d.get("D4", 0.011)
-    D5 = d.get("D5", 0.0)
+    # D1-D5=0: disable JC damage to prevent premature erosion under crush
+    D1 = D2 = D3 = D4 = D5 = 0.0
 
     f.write(f"$--- MID {mid}: {name} ---\n")
     f.write("*MAT_JOHNSON_COOK\n")
@@ -72,7 +67,7 @@ def _write_mat_johnson_cook(f: TextIO, mid: int, m: Dict[str, Any], name: str) -
     f.write("$        A         B         N         C         M        TM        TR      EPS0\n")
     f.write(f"{A:>10.1f}{B:>10.1f}{N:>10.2f}{C:>10.3f}{M:>10.1f}{TM:>10.1f}{TR:>10.2f}       1.0\n")
     f.write("$       CP        PC     SPALL        IT        D1        D2        D3        D4\n")
-    f.write(f"{CP:>10.1f}       0.0       2.0       0.0{D1:>10.2f}{D2:>10.2f}{D3:>10.2f}{D4:>10.3f}\n")
+    f.write(f"{CP:>10.1f}       0.0       0.0       0.0{D1:>10.2f}{D2:>10.2f}{D3:>10.2f}{D4:>10.3f}\n")
     f.write("$       D5                EROD     EFMIN    NUMINT\n")
     f.write(f"{D5:>10.1f}                 0.0   1.0E-06         0\n")
     f.write("$\n")
@@ -89,19 +84,31 @@ def _write_mat_crushable_foam(f: TextIO, mid: int, name: str,
 
 
 def _write_mat_piecewise(f: TextIO, mid: int, name: str, m: Dict[str, Any],
-                         cs_C: float, cs_P: float, fail: float = 0.0) -> None:
+                         cs_C: float, cs_P: float, fail: float = 0.0,
+                         lcss: int = 0) -> None:
     ro = m["density"]
     E = m["youngs_modulus"]
     pr = m["poisson_ratio"]
     sigy = m["yield_stress"]
     etan = m.get("tangent_modulus", 500.0)
+    # ETAN must be less than E (LS-DYNA Error 20430)
+    if etan >= E:
+        etan = E * 0.33
+    # When LCSS is used, set SIGY=0, ETAN=0 (curve defines full response)
+    if lcss > 0:
+        sigy = 0.0
+        etan = 0.0
 
     f.write(f"$--- MID {mid}: {name} ---\n")
     f.write("*MAT_PIECEWISE_LINEAR_PLASTICITY\n")
     f.write("$      MID        RO         E        PR      SIGY      ETAN      FAIL      TDEL\n")
     f.write(f"{mid:>10d}{ro:>10.3E}{E:>10.0f}{pr:>10.2f}{sigy:>10.1f}{etan:>10.1f}{fail:>10.1f}       0.0\n")
     f.write("$        C         P      LCSS      LCSR        VP\n")
-    f.write(f"{cs_C:>10.1f}{cs_P:>10.1f}         0         0       0.0\n")
+    f.write(f"{cs_C:>10.1f}{cs_P:>10.1f}{lcss:>10d}         0       0.0\n")
+    f.write("$     EPS1      EPS2      EPS3      EPS4      EPS5      EPS6      EPS7      EPS8\n")
+    f.write("       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0\n")
+    f.write("$      ES1       ES2       ES3       ES4       ES5       ES6       ES7       ES8\n")
+    f.write("       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0\n")
 
 
 def _write_mat_add_erosion(f: TextIO, mid: int, mxprs: float = 0.0,
@@ -283,36 +290,40 @@ def generate_materials(config: Dict[str, Any], output: str = "04_materials.k",
             }
         _write_mat_johnson_cook(f, MID.CU, cu, "Cu CC (Johnson-Cook)")
 
-        # MID 3: NMC Cathode — Crushable Foam
+        # MID 3: NMC Cathode — PLP with LCSS crush curve (TSHELL compatible)
+        # MAT_063/057 incompatible with TSHELL → using MAT_024 with LCSS
         nmc = mat["nmc_cathode"]
-        _write_mat_crushable_foam(f, MID.NMC, "NMC Cathode (Crushable Foam)",
-                                  nmc["density"], 500, 0.10, -4003, 2.0)
+        _write_mat_piecewise(f, MID.NMC, "NMC Cathode (PLP with crush curve)",
+                             nmc, cs_C=0.0, cs_P=0.0, fail=0.3, lcss=1001)
 
-        # MID 4: Graphite Anode — Crushable Foam
+        # MID 4: Graphite Anode — PLP with LCSS crush curve (TSHELL compatible)
         gr = mat["graphite_anode"]
-        _write_mat_crushable_foam(f, MID.GRAPHITE, "Graphite Anode (Crushable Foam)",
-                                  gr["density"], 1000, 0.10, -4004, 1.5)
+        _write_mat_piecewise(f, MID.GRAPHITE, "Graphite Anode (PLP with crush curve)",
+                             gr, cs_C=0.0, cs_P=0.0, fail=0.3, lcss=1002)
 
-        # MID 5: Separator — Piecewise Linear + Erosion
+        # MID 5: Separator — Piecewise Linear
         sep = mat["separator"]
         _write_mat_piecewise(f, MID.SEPARATOR, "PE Separator (PLP)",
-                             sep, cs_C=100.0, cs_P=4.0, fail=0.6)
-        _write_mat_add_erosion(f, MID.SEPARATOR,
-                               sigp1=30.0, sigvm=25.0, mxeps=0.6)
+                             sep, cs_C=100.0, cs_P=4.0, fail=0.3)
 
         # MID 6: Pouch
         pch = mat["pouch"]
         _write_mat_piecewise(f, MID.POUCH, "Pouch (Al-laminate)",
-                             pch, cs_C=6500.0, cs_P=4.0, fail=0.0)
-        _write_mat_add_erosion(f, MID.POUCH, mxprs=0.6, mxeps=0.20)
+                             pch, cs_C=6500.0, cs_P=4.0, fail=0.4)
 
-        # MID 7: Rigid
+        # Erosion for Al/Cu CC: max effective strain = 0.4
+        _write_mat_add_erosion(f, MID.AL, mxeps=0.4)
+        _write_mat_add_erosion(f, MID.CU, mxeps=0.4)
+
+        # MID 7: Impactor (Elastic Steel)
         rig = mat["rigid_material"]
-        _write_mat_rigid(f, MID.RIGID, rig)
+        _write_mat_elastic(f, MID.RIGID, rig, "Impactor (Elastic Steel)")
 
         # MID 8: Electrolyte
         ely = mat["electrolyte"]
         _write_mat_elastic(f, MID.ELECTROLYTE, ely, "Electrolyte (Elastic)")
+        # Erosion for electrolyte: max effective strain = 0.1
+        _write_mat_add_erosion(f, MID.ELECTROLYTE, mxeps=0.1)
 
         # ── Thermal ──
         write_separator(f, "THERMAL MATERIALS")
@@ -340,27 +351,18 @@ def generate_materials(config: Dict[str, Any], output: str = "04_materials.k",
                            sep_hc, _tc(sep), tlat=403.0, hlat=145000.0)
         _write_thermal_iso(f, 106, "Pouch", pch["density"],
                            _hc(pch), _tc(pch))
+        _write_thermal_iso(f, 107, "Rigid (Steel)", rig["density"],
+                           477.0, 0.0519)
         _write_thermal_iso(f, 108, "Electrolyte", ely["density"],
                            _hc(ely), _tc(ely))
 
         # ── EM ──
-        write_separator(f, "EM MATERIALS")
-        if em_sigma_tempdep:
-            f.write("$ 온도의존 전도도 모드 (em_sigma_tempdep=True): 전극 FUNCTID 연결\n$\n")
-        else:
-            f.write("$ 단순 모드 (em_sigma_tempdep=False): EM_RANDLES만 사용, 전극 SIGMA=0\n$\n")
-        _write_em_mat(f, MID.AL,        mtype=2, sigma=-6001)
-        _write_em_mat(f, MID.CU,        mtype=2, sigma=-6002)
-        _write_em_mat(f, MID.NMC,       mtype=1, sigma=-6003 if em_sigma_tempdep else 0)
-        _write_em_mat(f, MID.GRAPHITE,  mtype=1, sigma=-6004 if em_sigma_tempdep else 0)
-        _write_em_mat(f, MID.SEPARATOR, mtype=1, sigma=-6005 if em_sigma_tempdep else 0)
-        _write_em_mat(f, MID.POUCH,     mtype=1, sigma=1.0e-10)
-        _write_em_mat(f, MID.RIGID,     mtype=1, sigma=0)
-        _write_em_mat(f, MID.ELECTROLYTE, mtype=1, sigma=0)  # 이온전도도 ≠ 전자전도도
+        write_separator(f, "EM MATERIALS → Phase 3 전용, Phase 1/2에서는 비활성")
+        f.write("$ NOTE: EM_MAT_001 disabled for Phase 1 (SP solver, no EM needed)\n$\n")
 
         # ── GISSMO ──
         write_separator(f, "SEPARATOR SHUTDOWN MODEL (GISSMO)")
-        _write_gissmo(f, MID.SEPARATOR)
+        f.write("$ [DISABLED] GISSMO for MID 5 — triple failure causes premature erosion\n$\n")
 
         # NOTE: Thermal expansion moved to 04_materials_expansion_{type}.k
         # (PID-specific, generated by generate_thermal_expansion)
@@ -498,10 +500,22 @@ def generate_materials_tempdep(config: Dict[str, Any],
             "DEFINE_TABLE (crush), DEFINE_CURVE (GISSMO), DEFINE_FUNCTION (EM sigma)")
         f.write("$---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8\n")
 
-        # ── Crush curve TABLEs ──
-        write_separator(f, "TEMPERATURE-DEPENDENT CRUSH CURVES")
+        # ── TABLE + CURVE blocks ──
+        # LS-DYNA: TABLE 뒤에 참조하는 CURVE들이 바로 와야 함
+        write_separator(f, "TEMPERATURE-DEPENDENT CRUSH (TABLE → CURVES)")
 
-        # NMC crush table (LCID 4003)
+        nmc_data = [
+            (0.0, 0.0), (0.05, 5.0), (0.10, 15.0), (0.15, 35.0),
+            (0.20, 70.0), (0.25, 130.0), (0.30, 250.0), (0.35, 500.0),
+            (0.40, 1000.0), (0.45, 2000.0), (0.50, 4000.0),
+        ]
+        gr_data = [
+            (0.0, 0.0), (0.05, 8.0), (0.10, 22.0), (0.15, 50.0),
+            (0.20, 100.0), (0.25, 200.0), (0.30, 400.0), (0.35, 800.0),
+            (0.40, 1500.0), (0.45, 3000.0), (0.50, 5000.0),
+        ]
+
+        # TABLE 4003: NMC crush vs Temperature → then its curves
         f.write("$ TABLE 4003: NMC crush vs Temperature\n")
         f.write("*DEFINE_TABLE\n")
         f.write("$    TBID      SPTS\n")
@@ -510,23 +524,6 @@ def generate_materials_tempdep(config: Dict[str, Any],
         for temp, lcid in [(298.0, 4031), (373.0, 4032), (473.0, 4033)]:
             f.write(f"{temp:>20.1f}{lcid:>10d}\n")
         f.write("$\n")
-
-        # Graphite crush table (LCID 4004)
-        f.write("$ TABLE 4004: Graphite crush vs Temperature\n")
-        f.write("*DEFINE_TABLE\n")
-        f.write("$    TBID      SPTS\n")
-        f.write("      4004\n")
-        f.write("$      Temperature(K)   LCID\n")
-        for temp, lcid in [(298.0, 4041), (373.0, 4042), (473.0, 4043)]:
-            f.write(f"{temp:>20.1f}{lcid:>10d}\n")
-        f.write("$\n")
-
-        # NMC crush curves at each temperature
-        nmc_data = [
-            (0.0, 0.0), (0.05, 5.0), (0.10, 15.0), (0.15, 35.0),
-            (0.20, 70.0), (0.25, 130.0), (0.30, 250.0), (0.35, 500.0),
-            (0.40, 1000.0), (0.45, 2000.0), (0.50, 4000.0),
-        ]
         for lcid, scale, label in [
             (4031, 1.0, "298K"), (4032, 0.7, "373K"), (4033, 0.4, "473K")
         ]:
@@ -538,12 +535,15 @@ def generate_materials_tempdep(config: Dict[str, Any],
                 f.write(f"{x:>20.3f}{y * scale:>16.2f}\n")
             f.write("$\n")
 
-        # Graphite crush curves
-        gr_data = [
-            (0.0, 0.0), (0.05, 8.0), (0.10, 22.0), (0.15, 50.0),
-            (0.20, 100.0), (0.25, 200.0), (0.30, 400.0), (0.35, 800.0),
-            (0.40, 1500.0), (0.45, 3000.0), (0.50, 5000.0),
-        ]
+        # TABLE 4004: Graphite crush vs Temperature → then its curves
+        f.write("$ TABLE 4004: Graphite crush vs Temperature\n")
+        f.write("*DEFINE_TABLE\n")
+        f.write("$    TBID      SPTS\n")
+        f.write("      4004\n")
+        f.write("$      Temperature(K)   LCID\n")
+        for temp, lcid in [(298.0, 4041), (373.0, 4042), (473.0, 4043)]:
+            f.write(f"{temp:>20.1f}{lcid:>10d}\n")
+        f.write("$\n")
         for lcid, scale, label in [
             (4041, 1.0, "298K"), (4042, 0.65, "373K"), (4043, 0.35, "473K")
         ]:
@@ -565,9 +565,8 @@ def generate_materials_tempdep(config: Dict[str, Any],
             f.write(f"{eta:>20.3f}{eps:>16.2f}\n")
         f.write("$\n")
 
-        # ── EM conductivity functions ──
-        write_separator(f, "EM CONDUCTIVITY FUNCTIONS (C-style // comments)")
-        _write_sigma_functions(f)
+        # EM sigma functions → 별도 파일 (04_materials_em_functions.k, Phase 3 전용)
+        # SP 기본 솔버에서 *DEFINE_FUNCTION 미지원, Phase 2에서 에러 방지
 
         f.write("*END\n")
 
